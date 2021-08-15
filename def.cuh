@@ -119,15 +119,41 @@ const static int threads_per_block = 32;
 const static int threads_per_beam = nthreads/nbeams/threads_per_block;
 const static int nindices = ceil(nrays/(float)(threads_per_beam*threads_per_block));
 
+const static int nchunksx = 2;
+const static int nchunksy = nchunksx;
+const static int nchunksz = nchunksx;
+const static int nchunks = nchunksx*nchunksy*nchunksz;
+const static int chunk_size = xyz_size/nchunksx;
+const static int c3 = chunk_size*chunk_size*chunk_size;
+
 
 /* Piecewise linear interpolation
    Use binary search to find the segment
    Ref: https://software.llnl.gov/yorick-doc/qref/qrfunc09.html
 */
 double interp(const vector<double> y, const vector<double> x, const double xp);
+
 __global__
-void launch_ray_XYZ(int beam, unsigned raynum,
-                   double *x, double *y, double *z, double *wpe,
-                   double *dedendx, double *dedendy, double *dedendz,
-                   double *edep, double *eden, double *etemp, double *beam_centers, const double *beam_norm, double *pow_r, double *phase_r);
+void calculate_myxyz(int nindices, double *beam_norm, double *pow_r,
+    double *phase_r, double *uray_arr, double *uray_i, int *time_passed,
+    int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
+    double *x, double *y, double *z,
+    double *myx_arr, double *myy_arr, double *myz_arr, double uray_mult_true, double focal_length_true);
+
+__global__
+void initial_launch(int nindices, double *wpe, double *beam_norm, double *uray_arr,
+    int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
+    double *myvx_arr, double *myvy_arr, double *myvz_arr, int *time_passed,
+    int i, int j, int k);
+
+__global__
+void launch_ray_XYZ(int beam, unsigned nindices,
+    double *x, double *y, double *z,
+    double *dedendx, double *dedendy, double *dedendz,
+    double *edep, double *eden, double *etemp, double *uray_arr,
+    double *myx_arr, double *myy_arr, double *myz_arr,
+    double *myvx_arr, double *myvy_arr, double *myvz_arr,
+    double *uray_init,
+    int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
+    int i, int j, int k, int *time_passed, int *update, int *counter);
 #endif

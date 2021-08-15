@@ -3,7 +3,7 @@ CXXFLAGS  = -Xcompiler -Wall -Xcompiler -fopenmp -D USE_OPENMP -Xcompiler -std=c
 
 mkfile_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 LDFLAGS = -lm -I/usr/include/hdf5/serial -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ \
-	-lhdf5 -lhdf5_cpp -I/home/alex/Downloads/boost_1_75_0 
+	-lhdf5 -lhdf5_cpp
 
 NVCC = /usr/local/cuda-11.1/bin/nvcc
 NVFLAGS = -O3 --expt-relaxed-constexpr --gpu-architecture sm_70 -lineinfo -allow-unsupported-compiler
