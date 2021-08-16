@@ -2,10 +2,10 @@
 #define __DEF_H_
 
 #include <algorithm>
-//#include <array>
+#include <array>
 #include <cmath>
 #include <vector>
-//#include <tuple>
+#include <tuple>
 #include <assert.h>
 
 #include <boost/multi_array.hpp>
@@ -55,12 +55,12 @@ using namespace std;
 #define me 9.10938356e-31	// electron mass in kg
 #define ec 1.60217662e-19	// electron charge in C
 
-#define lambda (1.053e-4/3.0)	// wavelength of light, in cm. This is frequency-tripled "3w" or "blue" (UV) light
+#define lambda (1.053e-4/3.0)	// wavelength of light, in cm. This is frequncy-tripled "3w" or "blue" (UV) light
 #define freq (c/lambda)		// frequency of light, in Hz
 #define omega (2*M_PI*freq)	// frequency of light, in rad/s
 #define ncrit (1e-6*(pow(omega, 2)*me*e0/pow(ec, 2)))	// the critical density occurs when omega = omega_p,e
 
-#define rays_per_zone 4
+#define rays_per_zone 4 
 #define beam_max_x 450.0e-4
 #define beam_min_x -450.0e-4
 #define nrays_x (int(rays_per_zone*(beam_max_x-beam_min_x)/xres)+1)
@@ -81,7 +81,7 @@ using namespace std;
 #define offset 0.5e-4				//offset = 0.0e-4
 
 #define intensity 1.0e14                     // intensity of the beam in W/cm^2
-#define uray_mult (intensity*(courant_mult)/double(rays_per_zone*rays_per_zone))
+#define uray_mult (intensity*(courant_mult)*pow(double(pow(rays_per_zone, 2)), -1))
 
 #define numstored (int(5*rays_per_zone))
 
@@ -114,18 +114,26 @@ typedef Array3D::index Array3DIdx;
 // typedef Array<int,Dynamic> ArrayXi;
 
 // >= 5k
-const static int nthreads = min(10000000, nrays*nbeams);
-const static int threads_per_block = 32;
-const static int threads_per_beam = nthreads/nbeams/threads_per_block;
+const static long nthreads = min(100000000, nrays*nbeams);
+const static int threads_per_block = 256;
+const static long threads_per_beam = nthreads/nbeams/threads_per_block;
 const static int nindices = ceil(nrays/(float)(threads_per_beam*threads_per_block));
 
-const static int nchunksx = 2;
+const static int nchunksx = 1;
 const static int nchunksy = nchunksx;
 const static int nchunksz = nchunksx;
 const static int nchunks = nchunksx*nchunksy*nchunksz;
+const static int csx = xyz_size/nchunksx;
+const static int csy = xyz_size/nchunksy;
+const static int csz = xyz_size/nchunksz;
 const static int chunk_size = xyz_size/nchunksx;
-const static int c3 = chunk_size*chunk_size*chunk_size;
+const static int c3 = csx*csy*csz;
 
+/* Define common operations */
+inline unsigned arrSize(tuple<unsigned*, unsigned*> arr)
+{
+    return unsigned(get<1>(arr) - get<0>(arr));
+}
 
 /* Piecewise linear interpolation
    Use binary search to find the segment
@@ -134,10 +142,12 @@ const static int c3 = chunk_size*chunk_size*chunk_size;
 double interp(const vector<double> y, const vector<double> x, const double xp);
 
 __global__
+void chooseRays(int b, int *thisxa, int *thisya, int *thisza, int *timep, int i, int j, int k, int nindices);
+__global__
 void calculate_myxyz(int nindices, double *beam_norm, double *pow_r,
     double *phase_r, double *uray_arr, double *uray_i, int *time_passed,
     int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
-    double *x, double *y, double *z,
+    double *x, double *y, double *z, int *counter,
     double *myx_arr, double *myy_arr, double *myz_arr, double uray_mult_true, double focal_length_true);
 
 __global__
