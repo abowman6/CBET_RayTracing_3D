@@ -59,8 +59,15 @@ __device__ double interp_cuda(double *y, double *x, const double xp, int n)
 }
 
 __device__ 
-bool init(int beam, int raynum, double &x_init, double &y_init, double &z_init,
+bool init(int beam, int pre_raynum, double &x_init, double &y_init, double &z_init,
             double &uray_init, const double *beam_norm, double *pow_r, double *phase_r) {
+
+    int zones_spanned = ceil((beam_max_x-beam_min_x)/xres);
+    int b1 = pre_raynum/(rays_per_zone*rays_per_zone);
+    int b2 = pre_raynum%(rays_per_zone*rays_per_zone);
+    int ry = b1/(zones_spanned)*rays_per_zone + b2/rays_per_zone;
+    int rx = b1%(zones_spanned)*rays_per_zone + b2%rays_per_zone;
+    int raynum = ry*nrays_x+rx;
 
     x_init = beam_min_x;
     for (int i = 0; i < (raynum % nrays_x); i++) {
@@ -138,8 +145,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
     }
     __syncthreads();
 
+    int nthreads = min(max_threads, nrays*nbeams);
+    int threads_per_beam = nthreads/nbeams;
+
     for (int r = 0; r < nindices; ++r) {
-        int raynum = start*nindices + r;
+        int raynum = start + threads_per_beam*r;
         // raynum increases wrt to r so once this condition holds we are done 
         if (raynum >= nrays) return;
         bool t = init(beam, raynum, myx, myy, myz, uray, beam_norm, pow_r, phase_r);

@@ -125,7 +125,8 @@ typedef boost::multi_array<double, 3> Array3D;
 typedef Array3D::index Array3DIdx;
 
 // >= 5k
-const static long nthreads = min(120000000, nrays*nbeams);
+const static int max_threads = 120000000;
+const static long nthreads = min(max_threads, nrays*nbeams);
 const static int threads_per_block = 256;
 const static long threads_per_beam = nthreads/nbeams;
 const static int nindices = ceil(nrays/(float)(threads_per_beam));
