@@ -1,17 +1,25 @@
 #ifndef __DEF_H_
 #define __DEF_H_
 
-#include <algorithm>
-#include <array>
+//#include <algorithm>
+//#include <array>
 #include <cmath>
-#include <vector>
-#include <tuple>
+//#include <vector>
+//#include <tuple>
 #include <assert.h>
+#include <fstream>
+#include <iostream>
+#include <sys/time.h>
+#include <omp.h>
+#include <H5Cpp.h>
+#include <cuda_runtime.h>
 
 #include <boost/multi_array.hpp>
 #include <boost/array.hpp>
 #include <boost/cstdlib.hpp>
 #include <boost/next_prior.hpp>
+#include "multi_gpu.cuh"
+#include "omega_beams.h"
 using namespace std;
 
 /* Define flags for compilation */
@@ -25,17 +33,17 @@ using namespace std;
 #define nr 443
 /* Deine the 2D cartesian extent of the grid in cm (1e-4 is 1 micron). */
 #define xyz_size 100
-#define nx xyz_size
+const static int nx = xyz_size;
 #define xmin -0.13
 #define xmax 0.13
 #define dx ((xmax-xmin)/(nx-1))
 
-#define ny xyz_size
+const static int ny = xyz_size;
 #define ymin -0.13
 #define ymax 0.13
 #define dy ((ymax-ymin)/(ny-1))
 
-#define nz xyz_size
+const static int nz = xyz_size;
 #define zmin -0.13
 #define zmax 0.13
 #define dz ((zmax-zmin)/(nz-1))
@@ -47,7 +55,7 @@ using namespace std;
 #define beam_min_x -450.0e-4
 #define beam_max_x 450.0e-4
 
-#define nbeams 60
+#define nbeams 60 
 
 /* Define some constants to be used later */
 #define c 29979245800.0 	// speed of light in cm/s
@@ -63,8 +71,12 @@ using namespace std;
 #define rays_per_zone 4 
 #define beam_max_x 450.0e-4
 #define beam_min_x -450.0e-4
-#define nrays_x (int(rays_per_zone*(beam_max_x-beam_min_x)/xres)+1)
-#define nrays_y (int(rays_per_zone*(beam_max_x-beam_min_x)/yres)+1)
+/*
+#define nrays_x (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/xres)))
+#define nrays_y (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/yres)))
+*/
+#define nrays_x (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/xres)))
+#define nrays_y (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/yres)))
 #define nrays (nrays_x*nrays_y)
 #define sigma 0.0375
 
@@ -77,11 +89,10 @@ using namespace std;
 #define nt (int((1/courant_mult)*nz*2.0))
 #endif
 
-
 #define offset 0.5e-4				//offset = 0.0e-4
 
 #define intensity 1.0e14                     // intensity of the beam in W/cm^2
-#define uray_mult (intensity*(courant_mult)*pow(double(pow(rays_per_zone, 2)), -1))
+#define uray_mult (intensity*(courant_mult)*(pow(double(pow(double(rays_per_zone), 2.0)), -1)))
 
 #define numstored (int(5*rays_per_zone))
 
@@ -105,35 +116,59 @@ using namespace std;
 #define cs (1e2*sqrt(ec*(Z*Te_eV+3.0*Ti_eV)/mi_kg))	// acoustic wave speed, approx. 4e7 cm/s in this example
 #define u_flow (machnum*cs)    	// plasma flow velocity
 
+const static int nGPUs = 2;
+
 const static int absorption = 1;
 #define focal_length 0.1
 /* Define Matrix Types*/
 typedef boost::multi_array<double, 3> Array3D;
 typedef Array3D::index Array3DIdx;
-// typedef Array<int,Dynamic,Dynamic> ArrayXXi;
-// typedef Array<int,Dynamic> ArrayXi;
 
 // >= 5k
-const static long nthreads = min(100000000, nrays*nbeams);
+const static long nthreads = min(120000000, nrays*nbeams);
 const static int threads_per_block = 256;
-const static long threads_per_beam = nthreads/nbeams/threads_per_block;
-const static int nindices = ceil(nrays/(float)(threads_per_beam*threads_per_block));
+const static long threads_per_beam = nthreads/nbeams;
+const static int nindices = ceil(nrays/(float)(threads_per_beam));
+const static long total_size = (long)nx*(long)ny*(long)nz;
+const static long edep_size = ((long)nx+2)*((long)ny+2)*((long)nz+2);
 
-const static int nchunksx = 1;
-const static int nchunksy = nchunksx;
-const static int nchunksz = nchunksx;
-const static int nchunks = nchunksx*nchunksy*nchunksz;
-const static int csx = xyz_size/nchunksx;
-const static int csy = xyz_size/nchunksy;
-const static int csz = xyz_size/nchunksz;
-const static int chunk_size = xyz_size/nchunksx;
-const static int c3 = csx*csy*csz;
+/*struct GPUData {
+    double xconst;
+    double yconst;
+    double zconst;
+    double dx;
+    double dy;
+    double dz;
+    double xmin;
+    double ymin;
+    double zmin;
+    double xmax;
+    double ymax;
+    double zmax;
+    double uray_mult;
+    double beam_max_x;
+    double beam_min_x;
+    long nrays_x;
+    long nrays_y;        
+    long nrays;
+    int rays_per_zone;
+    double ncrit;
+    long nthreads;
+    int nbeams; 
+    double omega;
+    double me;
+    double e0;
+    double c2;
+    double dt; 
+    double ec;
+};*/
+
 
 /* Define common operations */
-inline unsigned arrSize(tuple<unsigned*, unsigned*> arr)
+/*inline unsigned arrSize(tuple<unsigned*, unsigned*> arr)
 {
     return unsigned(get<1>(arr) - get<0>(arr));
-}
+}*/
 
 /* Piecewise linear interpolation
    Use binary search to find the segment
@@ -142,28 +177,9 @@ inline unsigned arrSize(tuple<unsigned*, unsigned*> arr)
 double interp(const vector<double> y, const vector<double> x, const double xp);
 
 __global__
-void chooseRays(int b, int *thisxa, int *thisya, int *thisza, int *timep, int i, int j, int k, int nindices);
-__global__
-void calculate_myxyz(int nindices, double *beam_norm, double *pow_r,
-    double *phase_r, double *uray_arr, double *uray_i, int *time_passed,
-    int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
-    double *x, double *y, double *z, int *counter,
-    double *myx_arr, double *myy_arr, double *myz_arr, double uray_mult_true, double focal_length_true);
-
-__global__
-void initial_launch(int nindices, double *wpe, double *beam_norm, double *uray_arr,
-    int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
-    double *myvx_arr, double *myvy_arr, double *myvz_arr, int *time_passed,
-    int i, int j, int k);
-
-__global__
-void launch_ray_XYZ(int beam, unsigned nindices,
-    double *x, double *y, double *z,
-    double *dedendx, double *dedendy, double *dedendz,
-    double *edep, double *eden, double *etemp, double *uray_arr,
-    double *myx_arr, double *myy_arr, double *myz_arr,
-    double *myvx_arr, double *myvy_arr, double *myvz_arr,
-    double *uray_init,
-    int *thisx_0_arr, int *thisy_0_arr, int *thisz_0_arr,
-    int i, int j, int k, int *time_passed, int *update, int *counter);
+void launch_ray_XYZ(int b, unsigned nindices,
+                   double *dedendx, double *dedendy, double *dedendz,
+                   double *edep, double *bbeam_norm,
+                   double *myx_arr, double *myy_arr, double *myz_arr,
+                   double xconst, double yconst, double zconst);
 #endif
