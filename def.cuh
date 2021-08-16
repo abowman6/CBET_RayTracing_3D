@@ -132,44 +132,6 @@ const static int nindices = ceil(nrays/(float)(threads_per_beam));
 const static long total_size = (long)nx*(long)ny*(long)nz;
 const static long edep_size = ((long)nx+2)*((long)ny+2)*((long)nz+2);
 
-/*struct GPUData {
-    double xconst;
-    double yconst;
-    double zconst;
-    double dx;
-    double dy;
-    double dz;
-    double xmin;
-    double ymin;
-    double zmin;
-    double xmax;
-    double ymax;
-    double zmax;
-    double uray_mult;
-    double beam_max_x;
-    double beam_min_x;
-    long nrays_x;
-    long nrays_y;        
-    long nrays;
-    int rays_per_zone;
-    double ncrit;
-    long nthreads;
-    int nbeams; 
-    double omega;
-    double me;
-    double e0;
-    double c2;
-    double dt; 
-    double ec;
-};*/
-
-
-/* Define common operations */
-/*inline unsigned arrSize(tuple<unsigned*, unsigned*> arr)
-{
-    return unsigned(get<1>(arr) - get<0>(arr));
-}*/
-
 /* Piecewise linear interpolation
    Use binary search to find the segment
    Ref: https://software.llnl.gov/yorick-doc/qref/qrfunc09.html

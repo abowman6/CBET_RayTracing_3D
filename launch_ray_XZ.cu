@@ -104,15 +104,14 @@ bool init(int beam, int raynum, double &x_init, double &y_init, double &z_init,
 }
 
 __global__
-void launch_ray_XYZ(int b, unsigned nindices, double *te_data, 
-        double *r_data, double *ne_data, double *edep, double *bbeam_norm,
+void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g, 
+        double *r_data_g, double *ne_data_g, double *edep, double *bbeam_norm,
         double *beam_norm, double *pow_r, double *phase_r,
         double xconst, double yconst, double zconst) {
     
     int beam = blockIdx.x + b*(nbeams/nGPUs);
 
     int start = blockIdx.y*blockDim.x + threadIdx.x;
-    int nthreads = min(120000000, nrays*nbeams);
 
     int search_index_x = 1, search_index_y = 1, search_index_z = 1,
         thisx_m, thisx_p, thisy_m, thisy_p, thisz_m, thisz_p;
@@ -122,6 +121,22 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data,
     double half = 0.5001;
     double myx, myy, myz, myvx, myvy, myvz, uray, uray_init;
     int thisx, thisy, thisz;
+
+    __shared__ double ne_data[nr];
+    __shared__ double r_data[nr];
+    __shared__ double te_data[nr];
+
+    __syncthreads();
+    int rindices = ceil(nr/(float)threads_per_block);
+    for (int i = 0; i < rindices; ++i) {
+        int rindex = threadIdx.x + i*threads_per_block;
+        if (rindex < nr) {
+            ne_data[rindex] = ne_data_g[rindex];
+            r_data[rindex] = r_data_g[rindex];
+            te_data[rindex] = te_data_g[rindex];
+        }
+    }
+    __syncthreads();
 
     for (int r = 0; r < nindices; ++r) {
         int raynum = start*nindices + r;
