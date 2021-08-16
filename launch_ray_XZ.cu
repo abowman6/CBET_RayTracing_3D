@@ -6,6 +6,10 @@ __device__ long edep_index(long x, long y, long z) {
     return x*(ny+2)*(nz+2) + y*(nz+2) + z;
 }
 
+__device__ double square(double x){
+    return x*x;
+}
+
 // Piecewise linear interpolation
 // Use binary search to find the segment
 // Ref: https://software.llnl.gov/yorick-doc/qref/qrfunc09.html
@@ -87,7 +91,7 @@ bool init(int beam, int pre_raynum, double &x_init, double &y_init, double &z_in
     //y_init = (raynum / nrays_y) * (beam_max_x - beam_min_x) / (nrays_y - 1) + beam_min_x;
     y_init += dy/2;
 
-    double ref = sqrt(pow(x_init, 2) + pow(y_init, 2));
+    double ref = sqrt(square(x_init) + square(y_init));
     //if (ref > beam_max_x) return false;
 
     z_init = focal_length-dz/2;
@@ -179,9 +183,9 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
         }
         // Calculate the total k (=sqrt(kx^2+kz^2)) from the dispersion relation,
         // taking into account the local plasma frequency of where the ray starts.
-        double wtmp = sqrt(pow(thisx*dx+xmin, 2) + pow(thisy*dy+ymin, 2) + pow(thisz*dz+zmin, 2));
+        double wtmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
         wtmp = interp_cuda(ne_data, r_data, wtmp, nr);
-        double w = sqrt((pow(omega, 2) - wtmp*1e6*pow(ec, 2)/((double)me*e0)) / pow(c, 2));
+        double w = sqrt((square(omega) - wtmp*1e6*square(ec)/((double)me*e0)) / square(c));
 
         // Set the initial unnormalized k vectors, which give the initial direction
         // of the launched ray.
@@ -193,11 +197,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
         myvz = -1 * beam_norm[beam*3+2];
 
         // Length of k for the ray to be launched
-        double knorm = sqrt(pow(myvx, 2) + pow(myvy, 2) + pow(myvz, 2));
+        double knorm = sqrt(square(myvx) + square(myvy) + square(myvz));
 
-        myvx = pow(c, 2) * ((myvx / knorm) * w) / omega;
-        myvy = pow(c, 2) * ((myvy / knorm) * w) / omega;
-        myvz = pow(c, 2) * ((myvz / knorm) * w) / omega;
+        myvx = square(c) * ((myvx / knorm) * w) / omega;
+        myvy = square(c) * ((myvy / knorm) * w) / omega;
+        myvz = square(c) * ((myvz / knorm) * w) / omega;
 
         // Time step loop
         for (int tt = 0; tt < nt; ++tt) {
@@ -289,11 +293,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
 
             // In order to calculate the deposited energy into the plasma,
             // we need to calculate the plasma resistivity (eta) and collision frequency (nu_e-i)
-            double tmp = sqrt(pow(thisx*dx+xmin, 2) + pow(thisy*dy+ymin, 2) + pow(thisz*dz+zmin, 2));
+            double tmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
             double ed = interp_cuda(ne_data, r_data, tmp, nr);
 			double etemp = interp_cuda(te_data, r_data, tmp, nr);
-            double eta = 5.2e-5 * 10.0 / (pow(etemp, 1.5));
-            double nuei = (1e6 * ed * pow(ec, 2)/me)*eta;
+            double eta = 5.2e-5 * 10.0 / (etemp*sqrt(etemp));
+            double nuei = (1e6 * ed * square(ec)/me)*eta;
         
             if (absorption == 1) {
                 // Now we can decrement the ray's energy density according to how much energy

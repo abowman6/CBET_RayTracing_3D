@@ -66,15 +66,12 @@ const static int nz = xyz_size;
 #define lambda (1.053e-4/3.0)	// wavelength of light, in cm. This is frequncy-tripled "3w" or "blue" (UV) light
 #define freq (c/lambda)		// frequency of light, in Hz
 #define omega (2*M_PI*freq)	// frequency of light, in rad/s
-#define ncrit (1e-6*(pow(omega, 2)*me*e0/pow(ec, 2)))	// the critical density occurs when omega = omega_p,e
+#define ncrit (1e-6*(omega*omega)*me*e0/(ec*ec))	// the critical density occurs when omega = omega_p,e
 
 #define rays_per_zone 4 
 #define beam_max_x 450.0e-4
 #define beam_min_x -450.0e-4
-/*
-#define nrays_x (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/xres)))
-#define nrays_y (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/yres)))
-*/
+
 #define nrays_x (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/xres)))
 #define nrays_y (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/yres)))
 #define nrays (nrays_x*nrays_y)
@@ -92,7 +89,7 @@ const static int nz = xyz_size;
 #define offset 0.5e-4				//offset = 0.0e-4
 
 #define intensity 1.0e14                     // intensity of the beam in W/cm^2
-#define uray_mult (intensity*(courant_mult)*(pow(double(pow(double(rays_per_zone), 2.0)), -1)))
+#define uray_mult (intensity*(courant_mult)/(double(rays_per_zone*rays_per_zone)))
 
 #define numstored (int(5*rays_per_zone))
 
