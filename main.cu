@@ -3,7 +3,7 @@
 
 using namespace H5;
 
-void print(std::ostream& os, const double& x)
+void print(std::ostream& os, const energy_type& x)
 {
   os << x;
 }
@@ -21,9 +21,9 @@ void print(std::ostream& os, const Array& A)
   os << "]" << endl;
 }
 
-vector<double> span(double minimum, double maximum, unsigned len) {
-    double step = (maximum - minimum) / (len - 1), curr = minimum;
-    vector<double> ret(len);
+vector<energy_type> span(energy_type minimum, energy_type maximum, unsigned len) {
+    energy_type step = (maximum - minimum) / (len - 1), curr = minimum;
+    vector<energy_type> ret(len);
     for (unsigned i = 0; i < len; ++i) {
         ret[i] = curr;
         curr += step;
@@ -93,14 +93,14 @@ int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
     return 0;  // successfully terminated
 }
 
-void rayTracing(vector<double> te_profile, vector<double> r_profile, 
-        vector<double> ne_profile, double *edep) {
+void rayTracing(vector<energy_type> te_profile, vector<energy_type> r_profile, 
+        vector<energy_type> ne_profile, energy_type *edep) {
 
     struct timeval time1, time2, time3, time4, total;
     gettimeofday(&time1, NULL);
 
-    vector<double> phase_r = span(0.0, 0.1, 2001);
-    vector<double> pow_r(2001);
+    vector<energy_type> phase_r = span(0.0, 0.1, 2001);
+    vector<energy_type> pow_r(2001);
 
 #ifdef USE_OPENMP
 #pragma omp parallel for
@@ -110,53 +110,53 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
     }
     //printf("Starting CUDA code\n");
 
-    double **dev_beam_norm = new double *[nGPUs];
-    double **dev_bbeam_norm = new double *[nGPUs];
-    double **dev_ne_profile = new double *[nGPUs];
-    double **dev_te_profile = new double *[nGPUs];
-    double **dev_r_profile = new double *[nGPUs];
-    double **dev_pow_r = new double *[nGPUs];
-    double **dev_phase_r = new double *[nGPUs];
+    position_type **dev_beam_norm = new position_type *[nGPUs];
+    position_type **dev_bbeam_norm = new position_type *[nGPUs];
+    energy_type **dev_ne_profile = new energy_type *[nGPUs];
+    energy_type **dev_te_profile = new energy_type *[nGPUs];
+    energy_type **dev_r_profile = new energy_type *[nGPUs];
+    energy_type **dev_pow_r = new energy_type *[nGPUs];
+    energy_type **dev_phase_r = new energy_type *[nGPUs];
 
-    double *better_beam_norm = new double[nbeams*4];
+    position_type *better_beam_norm = new position_type[nbeams*4];
     for (int b = 0; b < nbeams; ++b) {
-        double theta1 = acos(beam_norm[b][2]);
-        double theta2 = atan2(beam_norm[b][1]*focal_length, beam_norm[b][0]*focal_length);
+        position_type theta1 = acos(beam_norm[b][2]);
+        position_type theta2 = atan2(beam_norm[b][1]*focal_length, beam_norm[b][0]*focal_length);
         better_beam_norm[4*b] = cos(theta1);
         better_beam_norm[4*b+1] = sin(theta1);
         better_beam_norm[4*b+2] = cos(theta2);
         better_beam_norm[4*b+3] = sin(theta2);
     }
 
-    double **dev_edep = new double *[nGPUs];
-    double **edep_per_GPU = new double *[nGPUs];
+    energy_type **dev_edep = new energy_type *[nGPUs];
+    energy_type **edep_per_GPU = new energy_type *[nGPUs];
     for (int i = 0; i < nGPUs; ++i) {
-        edep_per_GPU[i] = (double *)malloc(sizeof(double)*edep_size);
+        edep_per_GPU[i] = (energy_type *)malloc(sizeof(energy_type)*edep_size);
 
-        safeGPUAlloc((void **)&dev_beam_norm[i], sizeof(double)*3*nbeams, i);
-        safeGPUAlloc((void **)&dev_bbeam_norm[i], sizeof(double)*4*nbeams, i);
-        safeGPUAlloc((void **)&dev_pow_r[i], sizeof(double)*2001, i);
-        safeGPUAlloc((void **)&dev_phase_r[i], sizeof(double)*2001, i);
-        safeGPUAlloc((void **)&dev_ne_profile[i], sizeof(double)*nr, i);
-        safeGPUAlloc((void **)&dev_te_profile[i], sizeof(double)*nr, i);
-        safeGPUAlloc((void **)&dev_r_profile[i], sizeof(double)*nr, i);
-        safeGPUAlloc((void **)&dev_edep[i], sizeof(double)*edep_size, i);
+        safeGPUAlloc((void **)&dev_beam_norm[i], sizeof(position_type)*3*nbeams, i);
+        safeGPUAlloc((void **)&dev_bbeam_norm[i], sizeof(position_type)*4*nbeams, i);
+        safeGPUAlloc((void **)&dev_pow_r[i], sizeof(energy_type)*2001, i);
+        safeGPUAlloc((void **)&dev_phase_r[i], sizeof(energy_type)*2001, i);
+        safeGPUAlloc((void **)&dev_ne_profile[i], sizeof(energy_type)*nr, i);
+        safeGPUAlloc((void **)&dev_te_profile[i], sizeof(energy_type)*nr, i);
+        safeGPUAlloc((void **)&dev_r_profile[i], sizeof(energy_type)*nr, i);
+        safeGPUAlloc((void **)&dev_edep[i], sizeof(energy_type)*edep_size, i);
     
-        moveToAndFromGPU(dev_beam_norm[i], &(beam_norm[0][0]), sizeof(double)*3*nbeams, i);
-        moveToAndFromGPU(dev_bbeam_norm[i], &(better_beam_norm[0]), sizeof(double)*4*nbeams, i);
-        moveToAndFromGPU(dev_pow_r[i], &(pow_r[0]), sizeof(double)*2001, i);
-        moveToAndFromGPU(dev_phase_r[i], &(phase_r[0]), sizeof(double)*2001, i);
-        moveToAndFromGPU(dev_ne_profile[i], &(ne_profile[0]), sizeof(double)*nr, i);
-        moveToAndFromGPU(dev_te_profile[i], &(te_profile[0]), sizeof(double)*nr, i);
-        moveToAndFromGPU(dev_r_profile[i], &(r_profile[0]), sizeof(double)*nr, i);
+        moveToAndFromGPU(dev_beam_norm[i], &(beam_norm[0][0]), sizeof(position_type)*3*nbeams, i);
+        moveToAndFromGPU(dev_bbeam_norm[i], &(better_beam_norm[0]), sizeof(position_type)*4*nbeams, i);
+        moveToAndFromGPU(dev_pow_r[i], &(pow_r[0]), sizeof(energy_type)*2001, i);
+        moveToAndFromGPU(dev_phase_r[i], &(phase_r[0]), sizeof(energy_type)*2001, i);
+        moveToAndFromGPU(dev_ne_profile[i], &(ne_profile[0]), sizeof(energy_type)*nr, i);
+        moveToAndFromGPU(dev_te_profile[i], &(te_profile[0]), sizeof(energy_type)*nr, i);
+        moveToAndFromGPU(dev_r_profile[i], &(r_profile[0]), sizeof(energy_type)*nr, i);
     }
 
     gettimeofday(&time2, NULL);
 
-    double grad_const = pow(c, 2) / (2.0 * ncrit) * dt * 0.5;
-    double dedx_const = grad_const / xres;
-    double dedy_const = grad_const / yres;
-    double dedz_const = grad_const / zres;
+    position_type grad_const = pow(c, 2) / (2.0 * ncrit) * dt * 0.5;
+    position_type dedx_const = grad_const / xres;
+    position_type dedy_const = grad_const / yres;
+    position_type dedz_const = grad_const / zres;
 
     dim3 nblocks(nbeams/nGPUs, threads_per_beam/threads_per_block, 1);
     //printf("%d %d\n", nbeams/nGPUs, threads_per_beam);
@@ -176,7 +176,7 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
     }
     
     for (int i = 0; i < nGPUs; ++i) {
-        moveToAndFromGPU(edep_per_GPU[i], dev_edep[i], sizeof(double)*edep_size, i);
+        moveToAndFromGPU(edep_per_GPU[i], dev_edep[i], sizeof(energy_type)*edep_size, i);
         cudaFree(dev_pow_r[i]);
         cudaFree(dev_phase_r[i]);
         cudaFree(dev_beam_norm[i]);
@@ -243,7 +243,7 @@ int main(int argc, char **argv) {
 
     // r_data is the radius profile, ne_data is the electron profile
     // and te_data is the temperature profile
-    vector<double> r_data(nr), te_data(nr), ne_data(nr);
+    vector<energy_type> r_data(nr), te_data(nr), ne_data(nr);
 
     // Load data from files
     fstream file;
@@ -260,55 +260,7 @@ int main(int argc, char **argv) {
     file.close();
 
     Array3D edep(boost::extents[nx+2][ny+2][nz+2]);
-    //printf("%d %d\n", nthreads/nbeams, nrays);
-    
-    //cudaFuncSetAttribute(launch_ray_XYZ, cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-    //printf("%d\n", nindices);
-    //int zones_spanned = (int)ceil((beam_max_x-beam_min_x)/xres);
-    //printf("%d\n", nindices);
-    //printf("%d %d %d %d\n", zones_spanned, nrays, nrays_x, zones_spanned*4);
-    /*int *hit = new int[nrays];
-    int *bad = new int[nrays];
-    for (int raynum1 = 0; raynum1 < nrays; ++raynum1) {
-        int b1 = raynum1/(rays_per_zone*rays_per_zone);
-        int b2 = raynum1%(rays_per_zone*rays_per_zone);
-        int ry = b1/(zones_spanned)*rays_per_zone + b2/rays_per_zone;
-        int rx = b1%(zones_spanned)*rays_per_zone + b2%rays_per_zone;
-        if (rx >= nrays_x) {
-            printf("big x %d %d %d %d\n", b1,b2,ry,rx);
-        }
-        int raynum = ry*nrays_x+rx;
-        //if (raynum1 == 18501) printf("%d %d %d %d\n", b1,b2,ry,rx);
-        //if (b1 <= 67) printf("%d %d %d\n", b1, raynum1, raynum);
-        hit[raynum1] = raynum;
-        bad[raynum1] = 0;
-        if (raynum > nrays) {
-            printf("too big %d %d\n", raynum1, raynum);
-        }
-        //printf("%d r%d\n", raynum1, raynum);
-    }*/
-    //printf("%d %d\n", hit[4], hit[2209]);
-#if 0
-    for (int i = 0; i < nrays; ++i) {
-        int good = 0;
-        int a = -1;
-        for (int j = 0; j < nrays; ++j) {
-            if (i == hit[j]) {
-                if (good) {
-                    printf("bad %d %d %d\n", i, j, a);
-                } else {
-                    good = 1;
-                    a = j;
-                }
-                //break;
-            } 
-        }
-        if (!good) {
-            printf("%d\n", i);
-        }
-    }
-#endif
-    //printf("%d %d\n", nindices, threads_per_beam);
+
     rayTracing(te_data, r_data, ne_data, &edep[0][0][0]);
 /*
     Array3D edepavg(boost::extents[nx][ny][nz]);

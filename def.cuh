@@ -28,6 +28,9 @@ using namespace std;
 #define CBET_GAIN_DIAGNOSTICS 0
 #define CBET_UPDATE_DIAGNOSTICS 0
 
+typedef double position_type;
+typedef double energy_type;
+
 /* Define constants */
 
 #define nr 443
@@ -57,7 +60,7 @@ const static int nz = xyz_size;
 
 #define nbeams 60 
 
-/* Define some constants to be used later */
+// Define some constants to be used later
 #define c 29979245800.0 	// speed of light in cm/s
 #define e0 8.85418782e-12	// permittivity of free space in m^-3 kg^-1 s^4 A^2
 #define me 9.10938356e-31	// electron mass in kg
@@ -113,12 +116,12 @@ const static int nz = xyz_size;
 #define cs (1e2*sqrt(ec*(Z*Te_eV+3.0*Ti_eV)/mi_kg))	// acoustic wave speed, approx. 4e7 cm/s in this example
 #define u_flow (machnum*cs)    	// plasma flow velocity
 
-const static int nGPUs = 2;
+const static int nGPUs = 1;
 
 const static int absorption = 1;
 #define focal_length 0.1
 /* Define Matrix Types*/
-typedef boost::multi_array<double, 3> Array3D;
+typedef boost::multi_array<energy_type, 3> Array3D;
 typedef Array3D::index Array3DIdx;
 
 // >= 5k
@@ -137,9 +140,8 @@ const static long edep_size = ((long)nx+2)*((long)ny+2)*((long)nz+2);
 double interp(const vector<double> y, const vector<double> x, const double xp);
 
 __global__
-void launch_ray_XYZ(int b, unsigned nindices,
-                   double *dedendx, double *dedendy, double *dedendz,
-                   double *edep, double *bbeam_norm,
-                   double *myx_arr, double *myy_arr, double *myz_arr,
-                   double xconst, double yconst, double zconst);
+void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g, 
+   energy_type *r_data_g, energy_type *ne_data_g, energy_type *edep, position_type *bbeam_norm,
+   position_type *beam_norm, energy_type *pow_r, energy_type *phase_r,
+   position_type xconst, position_type yconst, position_type zconst);
 #endif
