@@ -277,6 +277,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             ytemp = (myy - ymin)*(1/dy);
             ztemp = (myz - zmin)*(1/dz);
 
+            int dthisx = (int)xtemp;
+            int dthisy = (int)ytemp;
+            int dthisz = (int)ztemp;
+
+
             // Determines current x index for the position
             // These loops count down to be consistent with the C++ code
             for (int xx = min(nx-1,thisx+1); xx >= max(0,thisx-1); --xx) {
@@ -316,9 +321,21 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             // eight nearest nodes of the ray's current location. 
 
             // Define xp, yp and zp to be the ray's position relative to the nearest node.
-            double xp = xtemp-thisx-0.5;
-            double yp = ytemp-thisy-0.5;
-            double zp = ztemp-thisz-0.5;
+            // double xp = xtemp-thisx-0.5;
+            // double yp = ytemp-thisy-0.5;
+            // double zp = ztemp-thisz-0.5;
+
+            double xp = abs(xtemp - dthisx);
+            double yp = abs(ytemp - dthisy);
+            double zp = abs(ztemp - dthisz);
+
+            // assert(xp >= 0);
+            // assert(yp >= 0);
+            // assert(zp >= 0);
+            // if (zp < 0) {
+            //     printf("%d %lf %lf %d\n", beam*nrays+raynum, zp, ztemp, dthisz);
+            //     assert(zp>=0);
+            // }
 
             // Below, we interpolate the energy deposition to the grid using linear area weighting.
             // The edep array must be two larger in each direction (one for min, one for max)
@@ -333,19 +350,42 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             a5 = (1.0-dl)*dn*(1.0-dm);
             a6 = (1.0-dl)*dn*dm;
             a7 = dl*dn*(1.0-dm);
-            a8 = dl*dn*dm;
+            a8 = dl*dn*dm; 
 
             int signx = ((xp < 0) ? -1 : 1), signy = ((yp < 0) ? -1 : 1),
                 signz = ((zp < 0) ? -1 : 1);
 
-            atomicAdd(&edep[edep_index(thisx+1, thisy+1, thisz+1)], a1*increment);
-            atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1, thisz+1)], a2*increment);
-            atomicAdd(&edep[edep_index(thisx+1, thisy+1, thisz+1+signz)], a3*increment);
-            atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1, thisz+1+signz)], a4*increment);
-            atomicAdd(&edep[edep_index(thisx+1, thisy+1+signy, thisz+1)], a5*increment);
-            atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1+signy, thisz+1)], a6*increment);
-            atomicAdd(&edep[edep_index(thisx+1, thisy+1+signy, thisz+1+signz)], a7*increment);
-            atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1+signy, thisz+1+signz)], a8*increment);
+            // if (beam*nrays+raynum == 5000) printf("(%d %d %d) (%d %d %d) (%d %d %d)\n", thisx, thisy, thisz, (int)xtemp, (int)ytemp, (int)ztemp, signx, signy, signz);
+            // if (beam*nrays+raynum == 5000) printf("(%lf %lf %lf)\n", xtemp, ytemp, ztemp);
+
+            if (beam*nrays+raynum == 5000) printf("(%ld %ld %ld %ld %ld %ld %ld %ld)\n", edep_index(dthisx+1, dthisy+1, dthisz+1), edep_index(dthisx+1+signx, dthisy+1, dthisz+1), edep_index(dthisx+1, dthisy+1, dthisz+1+signz), edep_index(dthisx+1+signx, dthisy+1, dthisz+1+signz), edep_index(dthisx+1, dthisy+1+signy, dthisz+1),
+            edep_index(dthisx+1+signx, dthisy+1+signy, dthisz+1), edep_index(dthisx+1, dthisy+1+signy, dthisz+1+signz), edep_index(dthisx+1+signx, dthisy+1+signy, dthisz+1+signz));
+
+            atomicAdd(&edep[edep_index(dthisx+1, dthisy+1, dthisz+1)], a1*increment);
+            atomicAdd(&edep[edep_index(dthisx+1+signx, dthisy+1, dthisz+1)], a2*increment);
+            atomicAdd(&edep[edep_index(dthisx+1, dthisy+1, dthisz+1+signz)], a3*increment);
+            atomicAdd(&edep[edep_index(dthisx+1+signx, dthisy+1, dthisz+1+signz)], a4*increment);
+            atomicAdd(&edep[edep_index(dthisx+1, dthisy+1+signy, dthisz+1)], a5*increment);
+            atomicAdd(&edep[edep_index(dthisx+1+signx, dthisy+1+signy, dthisz+1)], a6*increment);
+            atomicAdd(&edep[edep_index(dthisx+1, dthisy+1+signy, dthisz+1+signz)], a7*increment);
+            atomicAdd(&edep[edep_index(dthisx+1+signx, dthisy+1+signy, dthisz+1+signz)], a8*increment);
+
+            // atomicAdd(&edep[edep_index(thisx+1, thisy+1, thisz+1)], a1*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1, thisz+1)], a2*increment);
+            // atomicAdd(&edep[edep_index(thisx+1, thisy+1, thisz+1+signz)], a3*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1, thisz+1+signz)], a4*increment);
+            // atomicAdd(&edep[edep_index(thisx+1, thisy+1+signy, thisz+1)], a5*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1+signy, thisz+1)], a6*increment);
+            // atomicAdd(&edep[edep_index(thisx+1, thisy+1+signy, thisz+1+signz)], a7*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1+signy, thisz+1+signz)], a8*increment);
+            // atomicAdd(&edep[edep_index(thisx, thisy, thisz)], a1*increment);
+            // atomicAdd(&edep[edep_index(thisx+1, thisy, thisz)], a2*increment);
+            // atomicAdd(&edep[edep_index(thisx, thisy+1, thisz+1+signz)], a3*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1, thisz+1+signz)], a4*increment);
+            // atomicAdd(&edep[edep_index(thisx+1, thisy+1+signy, thisz+1)], a5*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1+signy, thisz+1)], a6*increment);
+            // atomicAdd(&edep[edep_index(thisx+1, thisy+1+signy, thisz+1+signz)], a7*increment);
+            // atomicAdd(&edep[edep_index(thisx+1+signx, thisy+1+signy, thisz+1+signz)], a8*increment);
 
             // This will cause the code to stop following the ray once it escapes the extent of the plasma
             if (uray <= 0.05 * uray_init ||
