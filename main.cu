@@ -343,8 +343,11 @@ void rayTracing(Array3D& x, Array3D& y, Array3D& z,
     moveToAndFromGPU(dbeam_norm, &(beam_norm[0][0]), sizeof(double)*180, bnidx);
     moveToAndFromGPU(dpow_r, &(pow_r[0]), sizeof(double)*2001, poridx);
     moveToAndFromGPU(dphase_r, &(phase_r[0]), sizeof(double)*2001, phridx);
+    
+    cout << nindices << endl;    
+    cout << threads_per_beam << endl;    
 
-    dim3 nblocks(nbeams, threads_per_beam, 1);
+    dim3 nblocks(nbeams, threads_per_beam/threads_per_block, 1);
     int rays_per_thread = ceil(nrays/(float)((nthreads/nbeams)/threads_per_block*threads_per_block));
     // ab: the first argument will be needed for splitting the work across 
     // GPUs so I leave it in.
@@ -354,7 +357,6 @@ void rayTracing(Array3D& x, Array3D& y, Array3D& z,
     cudaPeekAtLastError();
     cudaMemcpy(&(edep[0][0][0]), dedep, sizeof(double)*(nx+2)*(nz+2)*(ny+2), cudaMemcpyDefault);
 }
-
 int main(int argc, char **argv) {
     struct timeval time1, time2, time3, total;
 

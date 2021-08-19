@@ -24,7 +24,7 @@ using namespace std;
 
 #define nr 443
 /* Deine the 2D cartesian extent of the grid in cm (1e-4 is 1 micron). */
-#define xyz_size 100
+#define xyz_size 400
 #define nx xyz_size
 #define xmin -0.13
 #define xmax 0.13
@@ -63,8 +63,8 @@ using namespace std;
 #define rays_per_zone 4
 #define beam_max_x 450.0e-4
 #define beam_min_x -450.0e-4
-#define nrays_x (int(rays_per_zone*(beam_max_x-beam_min_x)/xres)+1)
-#define nrays_y (int(rays_per_zone*(beam_max_x-beam_min_x)/yres)+1)
+#define nrays_x (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/xres)))
+#define nrays_y (int(rays_per_zone*ceil((beam_max_x-beam_min_x)/yres)))
 #define nrays (nrays_x*nrays_y)
 #define sigma 0.0375
 
@@ -114,10 +114,10 @@ typedef Array3D::index Array3DIdx;
 // typedef Array<int,Dynamic> ArrayXi;
 
 // >= 5k
-const static int nthreads = min(10000000, nrays*nbeams);
-const static int threads_per_block = 32;
-const static int threads_per_beam = nthreads/nbeams/threads_per_block;
-const static int nindices = ceil(nrays/(float)(threads_per_beam*threads_per_block));
+const static int nthreads = min(120000000, nrays*nbeams);
+const static int threads_per_block = 768;
+const static int threads_per_beam = nthreads/nbeams;
+const static int nindices = ceil(nrays/(float)(threads_per_beam));
 
 
 /* Piecewise linear interpolation

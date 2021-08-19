@@ -53,8 +53,15 @@ double interp_cuda(double *y, double *x, const double xp, int n)
 }
 
 __device__
-bool init(int beam, int raynum, double &x_init, double &y_init, double &z_init, double &kx_init, double &ky_init, double &kz_init, double &uray_init, 
+bool init(int beam, int raynum1, double &x_init, double &y_init, double &z_init, double &kx_init, double &ky_init, double &kz_init, double &uray_init, 
              double *beam_centers, const double *beam_norm, double *pow_r, double *phase_r) {
+
+    int zones_spanned = ceil((beam_max_x-beam_min_x)/xres);
+    int b1 = raynum1/(rays_per_zone*rays_per_zone);
+    int b2 = raynum1%(rays_per_zone*rays_per_zone);
+    int ry = b1/(zones_spanned)*rays_per_zone + b2/rays_per_zone;
+    int rx = b1%(zones_spanned)*rays_per_zone + b2%rays_per_zone;
+    int raynum = ry*nrays_x+rx;
                  
     x_init = beam_min_x;
     for (int i = 0; i < (raynum % nrays_x); i++) {

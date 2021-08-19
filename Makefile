@@ -5,7 +5,7 @@ mkfile_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 LDFLAGS = -lm -I/usr/include/hdf5/serial -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ \
 	-lhdf5 -lhdf5_cpp -I/home/alex/Downloads/boost_1_75_0 
 
-NVCC = /usr/local/cuda-11.1/bin/nvcc
+NVCC = /usr/local/cuda/bin/nvcc
 NVFLAGS = -O3 --expt-relaxed-constexpr --gpu-architecture sm_70 -lineinfo -allow-unsupported-compiler
 
 cbet-gpu: def.cuh main.cu launch_ray_XZ.cu
