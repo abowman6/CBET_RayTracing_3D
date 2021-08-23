@@ -20,6 +20,8 @@
 #include <boost/next_prior.hpp>
 #include "multi_gpu.cuh"
 #include "omega_beams.h"
+
+#include "types.cuh"
 using namespace std;
 
 /* Define flags for compilation */
@@ -27,9 +29,6 @@ using namespace std;
 #define INTERSECTION_DIAGNOSTICS 0
 #define CBET_GAIN_DIAGNOSTICS 0
 #define CBET_UPDATE_DIAGNOSTICS 0
-
-typedef double position_type;
-typedef double energy_type;
 
 /* Define constants */
 

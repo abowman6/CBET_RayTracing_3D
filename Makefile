@@ -8,7 +8,7 @@ LDFLAGS = -lm -I/usr/include/hdf5/serial -L/usr/lib/x86_64-linux-gnu/hdf5/serial
 NVCC = /usr/local/cuda/bin/nvcc
 NVFLAGS = --expt-relaxed-constexpr --gpu-architecture sm_70 -lineinfo -g -Xptxas -O3,-v -allow-unsupported-compiler
 
-cbet-gpu: def.cuh main.cu launch_ray_XZ.cu multi_gpu.cpp
+cbet-gpu: def.cuh main.cu launch_ray_XZ.cu multi_gpu.cpp types.cuh
 	$(NVCC) $(NVFLAGS) $(CXXFLAGS) -o cbet-gpu main.cu launch_ray_XZ.cu multi_gpu.cpp $(LDFLAGS)
 
 test: def.cuh main.cu launch_ray_XZ.cu

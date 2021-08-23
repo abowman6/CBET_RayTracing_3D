@@ -64,25 +64,25 @@ int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
              * Define datatype for the data in the file.
              * We will store little endian INT numbers.
              */
-            H5::IntType datatype(H5::PredType::NATIVE_DOUBLE);
+            H5::IntType datatype(H5::PredType::NATIVE_FLOAT);
             datatype.setOrder(H5T_ORDER_LE);
             /*
              * Create a new dataset within the file using defined dataspace and
              * datatype and default dataset creation properties.
              */
             H5::DataSet dataset = file.createDataSet("/Coordinate_x", datatype, dataspace);
-            dataset.write(x.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(x.data(), H5::PredType::NATIVE_FLOAT);
             dataset = file.createDataSet("/Coordinate_y", datatype, dataspace);
-            dataset.write(y.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(y.data(), H5::PredType::NATIVE_FLOAT);
             dataset = file.createDataSet("/Coordinate_z", datatype, dataspace);
-            dataset.write(z.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(z.data(), H5::PredType::NATIVE_FLOAT);
 
             dataset = file.createDataSet("/Edepavg", datatype, dataspace);
             /*
              * Write the data to the dataset using default memory space, file
              * space, and transfer properties.
              */
-            dataset.write(edepavg.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(edepavg.data(), H5::PredType::NATIVE_FLOAT);
         }  // end of try block
     // catch failure caused by the H5File operations
     catch(H5::Exception& error )
@@ -262,7 +262,6 @@ int main(int argc, char **argv) {
     Array3D edep(boost::extents[nx+2][ny+2][nz+2]);
 
     rayTracing(te_data, r_data, ne_data, &edep[0][0][0]);
-/*
     Array3D edepavg(boost::extents[nx][ny][nz]);
     Array3D x(boost::extents[nx][ny][nz]);
     Array3D y(boost::extents[nx][ny][nz]);
@@ -301,9 +300,8 @@ int main(int argc, char **argv) {
     }
 
     save2Hdf5(x, y, z, edepavg);
-*/
 #ifdef PRINT
-    print(std::cout, edep);
+    print(std::cout, x);
 #endif
     return 0;
 }

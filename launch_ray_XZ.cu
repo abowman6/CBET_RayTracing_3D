@@ -262,6 +262,8 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
         // Length of k for the ray to be launched
         position_type knorm = sqrt(pos_square(myvx) + pos_square(myvy) + pos_square(myvz));
 
+        // if (beam*nrays+raynum == 5000) printf("%f %f %f\n", w, pos_square(c), myvx);
+
         myvx = pos_square(c) * ((myvx / knorm) * w) / omega;
         myvy = pos_square(c) * ((myvy / knorm) * w) / omega;
         myvz = pos_square(c) * ((myvz / knorm) * w) / omega;
@@ -327,6 +329,8 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
             position_type eden_z_m = pos_interp_cuda(ne_data, r_data, 
                     sqrt(thisxd*thisxd + thisyd*thisyd + thiszm*thiszm),nr);
 
+            // if (beam*nrays+raynum == 5000) printf("%lf %lf %lf %lf\n", myvx, myvy, myvz, dt);
+
             // Update ray position and velocity vectors
             myvx -= xconst * (eden_x_p - eden_x_m);
             myvy -= yconst * (eden_y_p - eden_y_m);
@@ -356,8 +360,6 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
                 thisz = (abs(zz-ztemp) < 0.5001) ? zz : thisz;
             }
 
-            // if (beam*nrays+raynum == 5000) printf("%d %d %d\n", thisx, thisy, thisz);
-
             // In order to calculate the deposited energy into the plasma,
             // we need to calculate the plasma resistivity (eta) and collision frequency (nu_e-i)
             energy_type tmp = sqrt(en_square(thisx*dx+xmin) + en_square(thisy*dy+ymin) + en_square(thisz*dz+zmin));
@@ -383,9 +385,9 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
             // eight nearest nodes of the ray's current location. 
 
             // Define xp, yp and zp to be the ray's position relative to the nearest node.
-            energy_type xp = xtemp-thisx-0.5;
-            energy_type yp = ytemp-thisy-0.5;
-            energy_type zp = ztemp-thisz-0.5;
+            energy_type xp = (energy_type)xtemp-thisx-0.5;
+            energy_type yp = (energy_type)ytemp-thisy-0.5;
+            energy_type zp = (energy_type)ztemp-thisz-0.5;
 
             // Below, we interpolate the energy deposition to the grid using linear area weighting.
             // The edep array must be two larger in each direction (one for min, one for max)
