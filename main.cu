@@ -1,5 +1,9 @@
 
-#include "def.cuh"
+#ifdef DOUBLE
+#include "def_d.cuh"
+#else
+#include "def_f.cuh"
+#endif
 
 using namespace H5;
 
@@ -262,6 +266,7 @@ int main(int argc, char **argv) {
     Array3D edep(boost::extents[nx+2][ny+2][nz+2]);
 
     rayTracing(te_data, r_data, ne_data, &edep[0][0][0]);
+ /* 
     Array3D edepavg(boost::extents[nx][ny][nz]);
     Array3D x(boost::extents[nx][ny][nz]);
     Array3D y(boost::extents[nx][ny][nz]);
@@ -299,7 +304,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    save2Hdf5(x, y, z, edepavg);
+    //save2Hdf5(x, y, z, edepavg);*/
 #ifdef PRINT
     print(std::cout, x);
 #endif

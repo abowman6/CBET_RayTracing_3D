@@ -1,4 +1,8 @@
-#include "types.cuh"
+#ifdef DOUBLE
+#include "def_d.cuh"
+#else
+#include "def_f.cuh"
+#endif
 static position_type beam_norm[][3] =
     {{0.851242019,	0.08853794,	0.517250479},
      {0.393457551,	0.541547875,	0.742911202},

@@ -1,5 +1,9 @@
 #include <iostream>
-#include "def.cuh"
+#ifdef DOUBLE
+#include "def_d.cuh"
+#else
+#include "def_f.cuh"
+#endif
 #include <cuda_runtime.h>
 
 __device__ long edep_index(long x, long y, long z) {
@@ -144,7 +148,7 @@ bool init(int beam, int pre_raynum, position_type &x_init, position_type &y_init
     //y_init = (raynum / nrays_y) * (beam_max_x - beam_min_x) / (nrays_y - 1) + beam_min_x;
     y_init += dy/2;
 
-    position_type ref = sqrt(pos_square(x_init) + pos_square(y_init));
+    position_type ref = sqrtf(pos_square(x_init) + pos_square(y_init));
     //if (ref > beam_max_x) return false;
 
     z_init = focal_length-dz/2;
@@ -195,6 +199,8 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
     energy_type uray, uray_init;
     int thisx, thisy, thisz;
 
+    position_type half = 0.5001;
+
     __shared__ position_type ne_data[nr];
     __shared__ position_type r_data[nr];
     __shared__ position_type te_data[nr];
@@ -223,19 +229,19 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
         if (t) { 
         thisx = 0, thisy = 0, thisz = 0;
         for (int xx = 0; xx < nx; ++xx) {
-            if (abs(xx*dx+xmin - myx) <= 0.5001 * dx) {
+            if (abs(xx*dx+xmin - myx) <= half * dx) {
                 thisx = xx;
                 break;  // "breaks" out of the xx loop once the if statement condition is met.
             }
         }
         for (int yy = 0; yy < ny; ++yy) {
-            if (abs(yy*dy+ymin - myy) <= 0.5001 * dy) {
+            if (abs(yy*dy+ymin - myy) <= half * dy) {
                 thisy = yy;
                 break;  // "breaks" out of the yy loop once the if statement condition is met.
             }
         }
         for (int zz = 0; zz < nz; ++zz) {
-            if (abs(zz*dz+zmin - myz) <= 0.5001 * dz) {
+            if (abs(zz*dz+zmin - myz) <= half * dz) {
                 thisz = zz;
                 break;  // "breaks" out of the zz loop once the if statement condition is met.
             }
@@ -245,9 +251,22 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
         }
         // Calculate the total k (=sqrt(kx^2+kz^2)) from the dispersion relation,
         // taking into account the local plasma frequency of where the ray starts.
+
+        myvx = -1 * beam_norm[beam*3+0];
+        myvy = -1 * beam_norm[beam*3+1];
+        myvz = -1 * beam_norm[beam*3+2];
+
+#ifndef DOUBLE
+        position_type wtmp = sqrtf(pos_square(thisx*dx+xmin) + pos_square(thisy*dy+ymin) + pos_square(thisz*dz+zmin));
+        wtmp = pos_interp_cuda(ne_data, r_data, wtmp, nr);
+        position_type w = sqrtf((pos_square(omega) - wtmp*1e6f*pos_square(ec)/((double)me*e0)) / pos_square(c));
+        position_type knorm = sqrtf(pos_square(myvx) + pos_square(myvy) + pos_square(myvz));
+#else
         position_type wtmp = sqrt(pos_square(thisx*dx+xmin) + pos_square(thisy*dy+ymin) + pos_square(thisz*dz+zmin));
         wtmp = pos_interp_cuda(ne_data, r_data, wtmp, nr);
         position_type w = sqrt((pos_square(omega) - wtmp*1e6*pos_square(ec)/((double)me*e0)) / pos_square(c));
+        position_type knorm = sqrt(pos_square(myvx) + pos_square(myvy) + pos_square(myvz));
+#endif
         // if (beam*nrays+raynum == 5000) printf("%.40f, %d\n", pos_square(ec), pos_square(ec) == 0.0);
 
         // Set the initial unnormalized k vectors, which give the initial direction
@@ -255,12 +274,8 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
         // For example, kx = kz = 1 would give a 45 degree angle in the +x / +z direction.
         // For example, kx = 0 (or kz = 0) would give pure kz (or kx) propagation.
 
-        myvx = -1 * beam_norm[beam*3+0];
-        myvy = -1 * beam_norm[beam*3+1];
-        myvz = -1 * beam_norm[beam*3+2];
 
         // Length of k for the ray to be launched
-        position_type knorm = sqrt(pos_square(myvx) + pos_square(myvy) + pos_square(myvz));
 
         // if (beam*nrays+raynum == 5000) printf("%f %f %f\n", w, pos_square(c), myvx);
 
@@ -317,17 +332,17 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
             // Compute the electron density at each of the six directly
             // adjacent nodes
             position_type eden_x_p = pos_interp_cuda(ne_data, r_data, 
-                    sqrt(thisxp*thisxp + thisyd*thisyd + thiszd*thiszd),nr);
+                    sqrtf(thisxp*thisxp + thisyd*thisyd + thiszd*thiszd),nr);
             position_type eden_x_m = pos_interp_cuda(ne_data, r_data, 
-                    sqrt(thisxm*thisxm + thisyd*thisyd + thiszd*thiszd),nr);
+                    sqrtf(thisxm*thisxm + thisyd*thisyd + thiszd*thiszd),nr);
             position_type eden_y_p = pos_interp_cuda(ne_data, r_data, 
-                    sqrt(thisxd*thisxd + thisyp*thisyp + thiszd*thiszd),nr);
+                    sqrtf(thisxd*thisxd + thisyp*thisyp + thiszd*thiszd),nr);
             position_type eden_y_m = pos_interp_cuda(ne_data, r_data, 
-                    sqrt(thisxd*thisxd + thisym*thisym + thiszd*thiszd),nr);
+                    sqrtf(thisxd*thisxd + thisym*thisym + thiszd*thiszd),nr);
             position_type eden_z_p = pos_interp_cuda(ne_data, r_data, 
-                    sqrt(thisxd*thisxd + thisyd*thisyd + thiszp*thiszp),nr);
+                    sqrtf(thisxd*thisxd + thisyd*thisyd + thiszp*thiszp),nr);
             position_type eden_z_m = pos_interp_cuda(ne_data, r_data, 
-                    sqrt(thisxd*thisxd + thisyd*thisyd + thiszm*thiszm),nr);
+                    sqrtf(thisxd*thisxd + thisyd*thisyd + thiszm*thiszm),nr);
 
             // if (beam*nrays+raynum == 5000) printf("%lf %lf %lf %lf\n", myvx, myvy, myvz, dt);
 
@@ -349,25 +364,33 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
             // Determines current x index for the position
             // These loops count down to be consistent with the C++ code
             for (int xx = min(nx-1,thisx+1); xx >= max(0,thisx-1); --xx) {
-                thisx = (abs(xx-xtemp) < 0.5001) ? xx : thisx;
+                thisx = (abs(xx-xtemp) < half) ? xx : thisx;
             }
              // Determines current y index for the position
             for (int yy = min(ny-1,thisy+1); yy >= max(0,thisy-1); --yy) {
-                thisy = (abs(yy-ytemp) < 0.5001) ? yy : thisy;
+                thisy = (abs(yy-ytemp) < half) ? yy : thisy;
             }
             // Determines current z index for the position
             for (int zz = min(nz-1,thisz+1); zz >= max(0, thisz-1); --zz) {
-                thisz = (abs(zz-ztemp) < 0.5001) ? zz : thisz;
+                thisz = (abs(zz-ztemp) < half) ? zz : thisz;
             }
 
             // In order to calculate the deposited energy into the plasma,
             // we need to calculate the plasma resistivity (eta) and collision frequency (nu_e-i)
+#ifndef DOUBLE
+            energy_type tmp = sqrtf(en_square(thisx*dx+xmin) + en_square(thisy*dy+ymin) + en_square(thisz*dz+zmin));
+            energy_type ed = en_interp_cuda(ne_data, r_data, tmp, nr);
+			      energy_type etemp = en_interp_cuda(te_data, r_data, tmp, nr);
+            energy_type eta = 5.2e-5f * 10.0f / (etemp*sqrtf(etemp));
+            energy_type nuei = (1e6f * ed * en_square(ec)/me)*eta;
+#else        
             energy_type tmp = sqrt(en_square(thisx*dx+xmin) + en_square(thisy*dy+ymin) + en_square(thisz*dz+zmin));
-            energy_type ed = en_interp_cuda(ne_data_g, r_data_g, tmp, nr);
-			energy_type etemp = en_interp_cuda(te_data_g, r_data_g, tmp, nr);
+            energy_type ed = en_interp_cuda(ne_data, r_data, tmp, nr);
+			      energy_type etemp = en_interp_cuda(te_data, r_data, tmp, nr);
             energy_type eta = 5.2e-5 * 10.0 / (etemp*sqrt(etemp));
             energy_type nuei = (1e6 * ed * en_square(ec)/me)*eta;
-        
+#endif
+
             if (absorption == 1) {
                 // Now we can decrement the ray's energy density according to how much energy
                 // was absorbed by the plasma.
@@ -385,9 +408,9 @@ void launch_ray_XYZ(int b, unsigned nindices, energy_type *te_data_g,
             // eight nearest nodes of the ray's current location. 
 
             // Define xp, yp and zp to be the ray's position relative to the nearest node.
-            energy_type xp = (energy_type)xtemp-thisx-0.5;
-            energy_type yp = (energy_type)ytemp-thisy-0.5;
-            energy_type zp = (energy_type)ztemp-thisz-0.5;
+            energy_type xp = (energy_type)xtemp-thisx-0.5f;
+            energy_type yp = (energy_type)ytemp-thisy-0.5f;
+            energy_type zp = (energy_type)ztemp-thisz-0.5f;
 
             // Below, we interpolate the energy deposition to the grid using linear area weighting.
             // The edep array must be two larger in each direction (one for min, one for max)
