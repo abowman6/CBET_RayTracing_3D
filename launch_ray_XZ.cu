@@ -6,6 +6,10 @@ __device__ long edep_index(long x, long y, long z) {
     return x*(ny+2)*(nz+2) + y*(nz+2) + z;
 }
 
+__device__ long eden_index(int x, int y, int z) {
+	return x*ny*nz + y*nz + z;
+}
+
 __device__ double square(double x){
     return x*x;
 }
@@ -115,10 +119,10 @@ bool init(int beam, int pre_raynum, double &x_init, double &y_init, double &z_in
 }
 
 __global__
-void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g, 
-        double *r_data_g, double *ne_data_g, double *edep, double *bbeam_norm,
+void launch_ray_XYZ(int b, unsigned nindices, double *eden, 
+        double *etemp, double *edep, double *bbeam_norm,
         double *beam_norm, double *pow_r, double *phase_r,
-        double xconst, double yconst, double zconst) {
+        double xconst, double yconst, double zconst, int *marked, int *boxes) {
     
     int beam = blockIdx.x + b*(nbeams/nGPUs);
 
@@ -133,7 +137,7 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
     double myx, myy, myz, myvx, myvy, myvz, uray, uray_init;
     int thisx, thisy, thisz;
 
-    __shared__ double ne_data[nr];
+    /*__shared__ double ne_data[nr];
     __shared__ double r_data[nr];
     __shared__ double te_data[nr];
 
@@ -147,7 +151,7 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             te_data[rindex] = te_data_g[rindex];
         }
     }
-    __syncthreads();
+    __syncthreads();*/
 
     int nthreads = min(max_threads, nrays*nbeams);
     int threads_per_beam = nthreads/nbeams;
@@ -183,8 +187,8 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
         }
         // Calculate the total k (=sqrt(kx^2+kz^2)) from the dispersion relation,
         // taking into account the local plasma frequency of where the ray starts.
-        double wtmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
-        wtmp = interp_cuda(ne_data, r_data, wtmp, nr);
+        //double wtmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
+        double wtmp = eden[eden_index(thisx, thisy, thisz)];
         double w = sqrt((square(omega) - wtmp*1e6*square(ec)/((double)me*e0)) / square(c));
 
         // Set the initial unnormalized k vectors, which give the initial direction
@@ -239,7 +243,7 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             
             // Convert from coordinates in the grid
             // to coordinates in space and pow them
-            double thisxp = thisx_p*dx+xmin;
+            /*double thisxp = thisx_p*dx+xmin;
             double thisxm = thisx_m*dx+xmin; 
             double thisxd = thisx*dx+xmin;
             double thisyp = thisy_p*dy+ymin; 
@@ -247,11 +251,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             double thisyd = thisy*dy+ymin;
             double thiszp = thisz_p*dz+zmin; 
             double thiszm = thisz_m*dz+zmin; 
-            double thiszd = thisz*dz+zmin;
+            double thiszd = thisz*dz+zmin;*/
 
             // Compute the electron density at each of the six directly
             // adjacent nodes
-            double eden_x_p = interp_cuda(ne_data, r_data, 
+            /*double eden_x_p = interp_cuda(ne_data, r_data, 
                     sqrt(thisxp*thisxp + thisyd*thisyd + thiszd*thiszd),nr);
             double eden_x_m = interp_cuda(ne_data, r_data, 
                     sqrt(thisxm*thisxm + thisyd*thisyd + thiszd*thiszd),nr);
@@ -262,7 +266,14 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
             double eden_z_p = interp_cuda(ne_data, r_data, 
                     sqrt(thisxd*thisxd + thisyd*thisyd + thiszp*thiszp),nr);
             double eden_z_m = interp_cuda(ne_data, r_data, 
-                    sqrt(thisxd*thisxd + thisyd*thisyd + thiszm*thiszm),nr);
+                    sqrt(thisxd*thisxd + thisyd*thisyd + thiszm*thiszm),nr);*/
+
+			double eden_x_p = eden[eden_index(thisx_p, thisy, thisz)];
+			double eden_x_m = eden[eden_index(thisx_m, thisy, thisz)];
+			double eden_y_p = eden[eden_index(thisx, thisy_p, thisz)];
+			double eden_y_m = eden[eden_index(thisx, thisy_m, thisz)];
+			double eden_z_p = eden[eden_index(thisx, thisy, thisz_p)];
+			double eden_z_m = eden[eden_index(thisx, thisy, thisz_m)];
 
             // Update ray position and velocity vectors
             myvx -= xconst * (eden_x_p - eden_x_m);
@@ -293,10 +304,12 @@ void launch_ray_XYZ(int b, unsigned nindices, double *te_data_g,
 
             // In order to calculate the deposited energy into the plasma,
             // we need to calculate the plasma resistivity (eta) and collision frequency (nu_e-i)
-            double tmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
-            double ed = interp_cuda(ne_data, r_data, tmp, nr);
-			double etemp = interp_cuda(te_data, r_data, tmp, nr);
-            double eta = 5.2e-5 * 10.0 / (etemp*sqrt(etemp));
+            //double tmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
+            //double ed = interp_cuda(ne_data, r_data, tmp, nr);
+			double ed = eden[eden_index(thisx, thisy, thisz)];
+			//double etemp = interp_cuda(te_data, r_data, tmp, nr);
+			double ete = etemp[eden_index(thisx, thisy, thisz)];
+            double eta = 5.2e-5 * 10.0 / (ete*sqrt(ete));
             double nuei = (1e6 * ed * square(ec)/me)*eta;
         
             if (absorption == 1) {

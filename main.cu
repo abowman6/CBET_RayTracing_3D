@@ -3,6 +3,56 @@
 
 using namespace H5;
 
+double interp(const vector<double> y, const vector<double> x, const double xp)
+{
+    unsigned low, high, mid;
+    assert(x.size() == y.size());
+
+    if (x.front() <= x.back()) {
+        // x monotonically increase
+        if (xp <= x.front())
+            return y.front();
+        else if (xp >= x.back())
+            return y.back();
+
+        low = 0;
+        high = x.size() - 1;
+        mid = (low + high) >> 1;
+        while (low < high - 1) {
+            if (x[mid] >= xp)
+                high = mid;
+            else
+                low = mid;
+            mid = (low + high) >> 1;
+        }
+
+        assert((xp >= x[mid]) && (xp <= x[mid + 1]));
+        return y[mid] +
+            (y[mid + 1] - y[mid]) / (x[mid + 1] - x[mid]) * (xp - x[mid]);
+    } else {
+        // x monotonically decrease
+        if (xp >= x.front())
+            return y.front();
+        else if (xp <= x.back())
+            return y.back();
+
+        low = 0;
+        high = x.size() - 1;
+        mid = (low + high) >> 1;
+        while (low < high - 1) {
+            if (x[mid] <= xp)
+                low = mid;
+            else
+                high = mid;
+            mid = (low + high) >> 1;
+        }
+
+        assert((xp <= x[mid]) && (xp >= x[mid + 1]));
+        return y[mid] +
+            (y[mid +1] - y[mid]) / (x[mid + 1] - x[mid]) * (xp - x[mid]);
+    }
+}
+
 void print(std::ostream& os, const double& x)
 {
   os << x;
@@ -88,13 +138,13 @@ int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
     catch(H5::Exception& error )
         {
             error.printErrorStack();
-            Ureturn -1;
+            return -1;
         }
     return 0;  // successfully terminated
 }
 
-void rayTracing(vector<double> te_profile, vector<double> r_profile, 
-        vector<double> ne_profile, double *edep, int *marked, int *boxes) {
+void rayTracing(Array3D eden, Array3D etemp, 
+        double *ne_profile, double *edep, int *marked, int *boxes) {
 
     struct timeval time1, time2, time3, time4, total;
     gettimeofday(&time1, NULL);
@@ -117,6 +167,9 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
     double **dev_r_profile = new double *[nGPUs];
     double **dev_pow_r = new double *[nGPUs];
     double **dev_phase_r = new double *[nGPUs];
+
+	double **dev_eden = new double *[nGPUs];
+	double **dev_etemp = new double *[nGPUs];
 
     int **dev_marked = new int *[nGPUs];
     int **dev_boxes = new int *[nGPUs];
@@ -146,14 +199,18 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
         safeGPUAlloc((void **)&dev_edep[i], sizeof(double)*edep_size, i);
         safeGPUAlloc((void **)&dev_marked[i], sizeof(int)*nx*ny*nz*2020, i);
         safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+		safeGPUAlloc((void **)&dev_eden[i], sizeof(double)*nx*ny*nz, i);
+		safeGPUAlloc((void **)&dev_etemp[i], sizeof(double)*nx*ny*nz, i);
     
         moveToAndFromGPU(dev_beam_norm[i], &(beam_norm[0][0]), sizeof(double)*3*nbeams, i);
         moveToAndFromGPU(dev_bbeam_norm[i], &(better_beam_norm[0]), sizeof(double)*4*nbeams, i);
         moveToAndFromGPU(dev_pow_r[i], &(pow_r[0]), sizeof(double)*2001, i);
         moveToAndFromGPU(dev_phase_r[i], &(phase_r[0]), sizeof(double)*2001, i);
-        moveToAndFromGPU(dev_ne_profile[i], &(ne_profile[0]), sizeof(double)*nr, i);
+        /*moveToAndFromGPU(dev_ne_profile[i], &(ne_profile[0]), sizeof(double)*nr, i);
         moveToAndFromGPU(dev_te_profile[i], &(te_profile[0]), sizeof(double)*nr, i);
-        moveToAndFromGPU(dev_r_profile[i], &(r_profile[0]), sizeof(double)*nr, i);
+        moveToAndFromGPU(dev_r_profile[i], &(r_profile[0]), sizeof(double)*nr, i);*/
+		moveToAndFromGPU(dev_eden[i], &(eden[0][0][0]), sizeof(double)*nx*ny*nz, i);
+		moveToAndFromGPU(dev_etemp[i], &(etemp[0][0][0]), sizeof(double)*nx*ny*nz, i);
     }
 
     gettimeofday(&time2, NULL);
@@ -173,10 +230,10 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
 #endif
     for (int i = 0; i < nGPUs; ++i) { 
         cudaSetDevice(i);
-        launch_ray_XYZ<<<nblocks, threads_per_block>>>(i, nindices, dev_te_profile[i], dev_r_profile[i],
-            dev_ne_profile[i], dev_edep[i], dev_bbeam_norm[i],
+        launch_ray_XYZ<<<nblocks, threads_per_block>>>(i, nindices, dev_eden[i], dev_etemp[i],
+            dev_edep[i], dev_bbeam_norm[i],
             dev_beam_norm[i], dev_pow_r[i], dev_phase_r[i],
-            dedx_const, dedy_const, dedz_const, dev_marked, dev_boxes);
+            dedx_const, dedy_const, dedz_const, dev_marked[i], dev_boxes[i]);
         cudaDeviceSynchronize();
     }
     
@@ -190,6 +247,8 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
         cudaFree(dev_ne_profile[i]);
         cudaFree(dev_r_profile[i]);
         cudaFree(dev_edep[i]);
+        cudaFree(dev_eden[i]);
+        cudaFree(dev_etemp[i]);
     }
     delete[] dev_pow_r;
     delete[] dev_phase_r;
@@ -199,6 +258,8 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
     delete[] dev_ne_profile;
     delete[] dev_r_profile;
     delete[] dev_edep;
+    delete[] dev_eden;
+    delete[] dev_etemp;
 
     gettimeofday(&time3, NULL);
     for (int l = 0; l < nGPUs; ++l) {
@@ -238,6 +299,7 @@ void rayTracing(vector<double> te_profile, vector<double> r_profile,
 
 int main(int argc, char **argv) {
 
+	printf("Hello\n");
 #ifdef USE_OPENMP
     if (argc <= 1) {
         omp_set_num_threads(1);
@@ -264,9 +326,31 @@ int main(int argc, char **argv) {
     file.flush();
     file.close();
 
-    Array3D edep(boost::extents[nx+2][ny+2][nz+2]);
+    Array3D edep(boost::extents[nx+2][ny+2][nz+2]),
+		etemp(boost::extents[nx][nz][nz]),
+        eden(boost::extents[nx][nz][nz]);
+        //wpe(boost::extents[nx][nz][nz]);;
+	printf("%d\n", eden[0][0][0]);
     int marked[nx][ny][nz][2020];
+#if 0
     int boxes[nbeams][nrays][ncrossings][3];
+
+/*#ifdef USE_OPENMP
+#pragma omp parallel for
+#endif
+    for (unsigned i = 0; i < nx; ++i) {
+        for (unsigned j = 0; j < ny; ++j) {
+            for (unsigned k = 0; k < nz; ++k) {
+                double tmp = sqrt(pow(i*dx+xmin, 2) + pow(j*dy+ymin, 2) + pow(k*dz+zmin, 2));
+                eden[i][j][k] = interp(ne_data, r_data, tmp);
+                //etemp[i][j][k] = 5.2e-5 * 10.0 / pow(interp(te_data, r_data, tmp), 1.5);
+                etemp[i][j][k] = interp(te_data, r_data, tmp);
+                //wpe[i][j][k] = sqrt((pow(omega, 2) - pow(sqrt(eden[i][j][k]*1e6*pow(ec,2)/((double)me*e0)), 2)) /
+                 //       pow(c, 2.0));
+                //wpe[i][j][k] = sqrt(eden[i][j][k]*1e6*pow(ec,2)/((double)me*e0));
+            }
+        }
+    }*/
     //printf("%d %d\n", nthreads/nbeams, nrays);
     
     //cudaFuncSetAttribute(launch_ray_XYZ, cudaFuncAttributePreferredSharedMemoryCarveout, 100);
@@ -316,7 +400,7 @@ int main(int argc, char **argv) {
     }
 #endif
     //printf("%d %d\n", nindices, threads_per_beam);
-    rayTracing(te_data, r_data, ne_data, &edep[0][0][0], marked, boxes);
+    rayTracing(eden, etemp, NULL, &edep[0][0][0], &marked[0][0][0][0], &boxes[0][0][0][0]);
 /*
     Array3D edepavg(boost::extents[nx][ny][nz]);
     Array3D x(boost::extents[nx][ny][nz]);
@@ -361,4 +445,5 @@ int main(int argc, char **argv) {
     print(std::cout, edep);
 #endif
     return 0;
+#endif
 }
