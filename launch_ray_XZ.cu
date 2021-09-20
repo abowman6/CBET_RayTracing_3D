@@ -2,11 +2,13 @@
 #include "def.cuh"
 #include <cuda_runtime.h>
 
+#define WARP_SIZE 32
+
 __device__ long edep_index(long x, long y, long z) {
     return x*(ny+2)*(nz+2) + y*(nz+2) + z;
 }
 
-__device__ long eden_index(int x, int y, int z) {
+__device__ int eden_index(int x, int y, int z) {
 	return x*ny*nz + y*nz + z;
 }
 
@@ -114,8 +116,8 @@ bool init(int beam, int pre_raynum, double &x_init, double &y_init, double &z_in
     x_init = x_init*cos(theta2) - y_init*sin(theta2);	// second rotation
     y_init = y_init*cos(theta2) + tmp_x0*sin(theta2);
 
-    uray_init = uray_mult*interp_cuda(pow_r, phase_r, ref, 2001);
-    return ref <= beam_max_x;
+    uray_init = (ref <= beam_max_x)*uray_mult*interp_cuda(pow_r, phase_r, ref, 2001);
+    return true;
 }
 
 __global__
@@ -127,6 +129,8 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
     int beam = blockIdx.x + b*(nbeams/nGPUs);
 
     int start = blockIdx.y*blockDim.x + threadIdx.x;
+
+    int lid = threadIdx.x % WARP_SIZE;
 
     int search_index_x = 1, search_index_y = 1, search_index_z = 1,
         thisx_m, thisx_p, thisy_m, thisy_p, thisz_m, thisz_p;
@@ -189,7 +193,7 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
         // taking into account the local plasma frequency of where the ray starts.
         //double wtmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
         double wtmp = eden[eden_index(thisx, thisy, thisz)];
-        double w = sqrt((square(omega) - wtmp*1e6*square(ec)/((double)me*e0)) / square(c));
+        double w = sqrt((square(omega) - wtmp*1e6*square(ec)/(me*e0)) / square(c));
 
         // Set the initial unnormalized k vectors, which give the initial direction
         // of the launched ray.
@@ -275,6 +279,7 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
 			double eden_z_p = eden[eden_index(thisx, thisy, thisz_p)];
 			double eden_z_m = eden[eden_index(thisx, thisy, thisz_m)];
 
+
             // Update ray position and velocity vectors
             myvx -= xconst * (eden_x_p - eden_x_m);
             myvy -= yconst * (eden_y_p - eden_y_m);
@@ -282,6 +287,9 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
             myx += myvx * dt;
             myy += myvy * dt;
             myz += myvz * dt;
+
+            // Compute ray coverage
+          
             
             // Helper values to simplify the following computations
             xtemp = (myx - xmin)*(1/dx);

@@ -113,7 +113,7 @@ const static int nz = xyz_size;
 #define cs (1e2*sqrt(ec*(Z*Te_eV+3.0*Ti_eV)/mi_kg))	// acoustic wave speed, approx. 4e7 cm/s in this example
 #define u_flow (machnum*cs)    	// plasma flow velocity
 
-const static int nGPUs = 1;
+const static int nGPUs = 2;
 
 const static int absorption = 1;
 #define focal_length 0.1

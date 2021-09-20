@@ -18,9 +18,7 @@ double interp(const vector<double> y, const vector<double> x, const double xp)
         low = 0;
         high = x.size() - 1;
         mid = (low + high) >> 1;
-        while (low < high - 1) {
-            if (x[mid] >= xp)
-                high = mid;
+        while (low < high - 1) { if (x[mid] >= xp) high = mid;
             else
                 low = mid;
             mid = (low + high) >> 1;
@@ -197,10 +195,10 @@ void rayTracing(Array3D eden, Array3D etemp,
         safeGPUAlloc((void **)&dev_te_profile[i], sizeof(double)*nr, i);
         safeGPUAlloc((void **)&dev_r_profile[i], sizeof(double)*nr, i);
         safeGPUAlloc((void **)&dev_edep[i], sizeof(double)*edep_size, i);
-        safeGPUAlloc((void **)&dev_marked[i], sizeof(int)*nx*ny*nz*2020, i);
-        safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
-		safeGPUAlloc((void **)&dev_eden[i], sizeof(double)*nx*ny*nz, i);
-		safeGPUAlloc((void **)&dev_etemp[i], sizeof(double)*nx*ny*nz, i);
+        //safeGPUAlloc((void **)&dev_marked[i], sizeof(int)*nx*ny*nz*2020, i);
+        //safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+		    safeGPUAlloc((void **)&dev_eden[i], sizeof(double)*nx*ny*nz, i);
+		    safeGPUAlloc((void **)&dev_etemp[i], sizeof(double)*nx*ny*nz, i);
     
         moveToAndFromGPU(dev_beam_norm[i], &(beam_norm[0][0]), sizeof(double)*3*nbeams, i);
         moveToAndFromGPU(dev_bbeam_norm[i], &(better_beam_norm[0]), sizeof(double)*4*nbeams, i);
@@ -209,8 +207,8 @@ void rayTracing(Array3D eden, Array3D etemp,
         /*moveToAndFromGPU(dev_ne_profile[i], &(ne_profile[0]), sizeof(double)*nr, i);
         moveToAndFromGPU(dev_te_profile[i], &(te_profile[0]), sizeof(double)*nr, i);
         moveToAndFromGPU(dev_r_profile[i], &(r_profile[0]), sizeof(double)*nr, i);*/
-		moveToAndFromGPU(dev_eden[i], &(eden[0][0][0]), sizeof(double)*nx*ny*nz, i);
-		moveToAndFromGPU(dev_etemp[i], &(etemp[0][0][0]), sizeof(double)*nx*ny*nz, i);
+		    moveToAndFromGPU(dev_eden[i], &(eden[0][0][0]), sizeof(double)*nx*ny*nz, i);
+		    moveToAndFromGPU(dev_etemp[i], &(etemp[0][0][0]), sizeof(double)*nx*ny*nz, i);
     }
 
     gettimeofday(&time2, NULL);
@@ -299,7 +297,6 @@ void rayTracing(Array3D eden, Array3D etemp,
 
 int main(int argc, char **argv) {
 
-	printf("Hello\n");
 #ifdef USE_OPENMP
     if (argc <= 1) {
         omp_set_num_threads(1);
@@ -330,12 +327,10 @@ int main(int argc, char **argv) {
 		etemp(boost::extents[nx][nz][nz]),
         eden(boost::extents[nx][nz][nz]);
         //wpe(boost::extents[nx][nz][nz]);;
-	printf("%d\n", eden[0][0][0]);
-    int marked[nx][ny][nz][2020];
-#if 0
-    int boxes[nbeams][nrays][ncrossings][3];
+    int marked[nx];
+    int boxes[nbeams];
 
-/*#ifdef USE_OPENMP
+#ifdef USE_OPENMP
 #pragma omp parallel for
 #endif
     for (unsigned i = 0; i < nx; ++i) {
@@ -350,7 +345,7 @@ int main(int argc, char **argv) {
                 //wpe[i][j][k] = sqrt(eden[i][j][k]*1e6*pow(ec,2)/((double)me*e0));
             }
         }
-    }*/
+    }
     //printf("%d %d\n", nthreads/nbeams, nrays);
     
     //cudaFuncSetAttribute(launch_ray_XYZ, cudaFuncAttributePreferredSharedMemoryCarveout, 100);
@@ -400,7 +395,7 @@ int main(int argc, char **argv) {
     }
 #endif
     //printf("%d %d\n", nindices, threads_per_beam);
-    rayTracing(eden, etemp, NULL, &edep[0][0][0], &marked[0][0][0][0], &boxes[0][0][0][0]);
+    rayTracing(eden, etemp, NULL, &edep[0][0][0], &marked[0], &boxes[0]);
 /*
     Array3D edepavg(boost::extents[nx][ny][nz]);
     Array3D x(boost::extents[nx][ny][nz]);
@@ -445,5 +440,4 @@ int main(int argc, char **argv) {
     print(std::cout, edep);
 #endif
     return 0;
-#endif
 }
