@@ -113,13 +113,17 @@ const static int nz = xyz_size;
 #define cs (1e2*sqrt(ec*(Z*Te_eV+3.0*Ti_eV)/mi_kg))	// acoustic wave speed, approx. 4e7 cm/s in this example
 #define u_flow (machnum*cs)    	// plasma flow velocity
 
-const static int nGPUs = 2;
+const static int nGPUs = 1;
 
 const static int absorption = 1;
 #define focal_length 0.1
 /* Define Matrix Types*/
 typedef boost::multi_array<double, 3> Array3D;
 typedef Array3D::index Array3DIdx;
+typedef boost::multi_array<double, 4> Array4D;
+typedef Array4D::index Array4DIdx;
+typedef boost::multi_array<int, 4> Array4I;
+typedef Array4I::index Array4IIdx;
 
 // >= 5k
 const static int max_threads = 120000000;
@@ -141,5 +145,5 @@ void launch_ray_XYZ(int b, unsigned nindices,
                    double *dedendx, double *dedendy, double *dedendz,
                    double *edep, double *bbeam_norm,
                    double *myx_arr, double *myy_arr, 
-                   double xconst, double yconst, double zconst, int *marked, int *boxes);
+                   double xconst, double yconst, double zconst, int *marked, int *boxes, double *ray_coverage, int *counter);
 #endif

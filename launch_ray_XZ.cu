@@ -79,6 +79,8 @@ bool init(int beam, int pre_raynum, double &x_init, double &y_init, double &z_in
     int rx = b1%(zones_spanned)*rays_per_zone + b2%rays_per_zone;
     int raynum = ry*nrays_x+rx;
 
+    //if (raynum == 51) printf("%d\n", pre_raynum);
+
     x_init = beam_min_x;
     for (int i = 0; i < (raynum % nrays_x); i++) {
         x_init += (beam_max_x - beam_min_x) / (nrays_x - 1);
@@ -124,13 +126,16 @@ __global__
 void launch_ray_XYZ(int b, unsigned nindices, double *eden, 
         double *etemp, double *edep, double *bbeam_norm,
         double *beam_norm, double *pow_r, double *phase_r,
-        double xconst, double yconst, double zconst, int *marked, int *boxes) {
+        double xconst, double yconst, double zconst, int *marked, int *boxes,
+        double *area_coverage, int *counter) {
     
     int beam = blockIdx.x + b*(nbeams/nGPUs);
 
     int start = blockIdx.y*blockDim.x + threadIdx.x;
 
     int lid = threadIdx.x % WARP_SIZE;
+    int hlid = (lid % 2 == 0) ? lid + 1 : lid - 1;
+    int vlid = ((lid)/rays_per_zone % 2 == 0) ? lid+rays_per_zone : lid-rays_per_zone;
 
     int search_index_x = 1, search_index_y = 1, search_index_z = 1,
         thisx_m, thisx_p, thisy_m, thisy_p, thisz_m, thisz_p;
@@ -211,6 +216,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
         myvy = square(c) * ((myvy / knorm) * w) / omega;
         myvz = square(c) * ((myvz / knorm) * w) / omega;
 
+        int numcrossing = 0;
+
+        double lastx, lasty, lastz;
+        int thisx_prev, thisy_prev, thisz_prev;
+
         // Time step loop
         for (int tt = 0; tt < nt; ++tt) {
             // The next ray position depends upon the discrete gradient
@@ -272,13 +282,16 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
             double eden_z_m = interp_cuda(ne_data, r_data, 
                     sqrt(thisxd*thisxd + thisyd*thisyd + thiszm*thiszm),nr);*/
 
-			double eden_x_p = eden[eden_index(thisx_p, thisy, thisz)];
-			double eden_x_m = eden[eden_index(thisx_m, thisy, thisz)];
-			double eden_y_p = eden[eden_index(thisx, thisy_p, thisz)];
-			double eden_y_m = eden[eden_index(thisx, thisy_m, thisz)];
-			double eden_z_p = eden[eden_index(thisx, thisy, thisz_p)];
-			double eden_z_m = eden[eden_index(thisx, thisy, thisz_m)];
+			      double eden_x_p = eden[eden_index(thisx_p, thisy, thisz)];
+			      double eden_x_m = eden[eden_index(thisx_m, thisy, thisz)];
+			      double eden_y_p = eden[eden_index(thisx, thisy_p, thisz)];
+			      double eden_y_m = eden[eden_index(thisx, thisy_m, thisz)];
+			      double eden_z_p = eden[eden_index(thisx, thisy, thisz_p)];
+			      double eden_z_m = eden[eden_index(thisx, thisy, thisz_m)];
 
+            double old_x = myx;
+            double old_y = myy;
+            double old_z = myz;
 
             // Update ray position and velocity vectors
             myvx -= xconst * (eden_x_p - eden_x_m);
@@ -289,12 +302,37 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
             myz += myvz * dt;
 
             // Compute ray coverage
-          
+            double h_x = __shfl_sync(0xffffffff, myx, hlid); 
+            double v_x = __shfl_sync(0xffffffff, myx, vlid); 
+            double h_y = __shfl_sync(0xffffffff, myy, hlid); 
+            double v_y = __shfl_sync(0xffffffff, myy, vlid); 
+            double h_z = __shfl_sync(0xffffffff, myz, hlid); 
+            double v_z = __shfl_sync(0xffffffff, myz, vlid); 
+
+            double x_hdiff = myx - h_x; 
+            double y_hdiff = myy - h_y; 
+            double z_hdiff = myz - h_z; 
+            double x_vdiff = myx - v_x; 
+            double y_vdiff = myy - v_y; 
+            double z_vdiff = myz - v_z; 
+
+            double area_x = y_hdiff*z_vdiff - z_hdiff*y_vdiff;
+            double area_y = -x_hdiff*z_vdiff + z_hdiff*x_vdiff;
+            double area_z = x_hdiff*y_vdiff - y_hdiff*z_vdiff;
+    
+            double area = sqrt(area_x*area_x + area_y*area_x + area_x*area_x)/2;
             
             // Helper values to simplify the following computations
             xtemp = (myx - xmin)*(1/dx);
             ytemp = (myy - ymin)*(1/dy);
             ztemp = (myz - zmin)*(1/dz);
+
+            thisx_m = max(0,thisx-1);
+            thisx_p = min(nx-1,thisx+1);
+            thisy_m = max(0,thisy-1);
+            thisy_p = min(ny-1,thisy+1);
+            thisz_m = max(0,thisz-1);
+            thisz_p = min(nz-1,thisz+1);
 
             // Determines current x index for the position
             // These loops count down to be consistent with the C++ code
@@ -310,13 +348,97 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
                 thisz = (abs(zz-ztemp) < half) ? zz : thisz;
             }
 
+            // Code to update boxes
+            // why do we need this loop?
+            for (int xx = thisx_m; xx <= thisx_p; ++xx) {
+              double currx = xx*dx+xmin - dx/2;
+              if ((myx > currx && old_x <= currx) ||
+                   myx < currx && old_x >= currx) {
+                // can this still be 2D?
+                double cross_z = old_z + (myz - old_z) / 
+                                (myx - old_x) * (currx - old_x);
+                double cross_y = old_y + (myy - old_y) / 
+                                (myx - old_x) * (currx - old_x);
+                // what does this condition do?
+                if (abs(cross_z - lastz) > 1.0e-20) {
+                  // don't store crossings that go out of bounds
+                  if (myx <= xmax + dx/2 && myx >= xmin - dx/2) {
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 0] = thisx;
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 1] = thisy;
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 2] = thisz;
+                    area_coverage[beam*nrays*ncrossings + raynum*ncrossings + numcrossing] = area;
+                  } 
+                  lastx = (int)currx;
+                  numcrossing++;
+                  break;
+                }       
+              }
+            } 
+
+            for (int yy = thisy_m; yy <= thisy_p; ++yy) {
+              double curry = yy*dy+xmin - dy/2;
+              if ((myy > curry && old_y <= curry) ||
+                   myy < curry && old_y >= curry) {
+                // can this still be 2D?
+                double cross_z = old_z + (myz - old_z) / 
+                                (myy - old_y) * (curry - old_y);
+                double cross_x = old_x + (myx - old_x) / 
+                                (myy - old_y) * (curry - old_y);
+                // what does this condition do?
+                if (abs(cross_x - lastx) > 1.0e-20) {
+                  // don't store crossings that go out of bounds
+                  if (myy <= ymax + dy/2 && myy >= ymin - dy/2) {
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 0] = thisx;
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 1] = thisy;
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 2] = thisz;
+                    area_coverage[beam*nrays*ncrossings + raynum*ncrossings + numcrossing] = area;
+                  } 
+                  lasty = (int)curry;
+                  numcrossing++;
+                  break;
+                }       
+              }
+            } 
+
+            for (int zz = thisz_m; zz <= thisz_p; ++zz) {
+              double currz = zz*dz+zmin - dz/2;
+              if ((myz > currz && old_z <= currz) ||
+                   myz < currz && old_z >= currz) {
+                // can this still be 2D?
+                double cross_y = old_y + (myy - old_y) / 
+                                (myz - old_z) * (currz - old_z);
+                double cross_x = old_x + (myx - old_x) / 
+                                (myz - old_z) * (currz - old_z);
+                // what does this condition do?
+                if (abs(cross_x - lastx) > 1.0e-20) {
+                  // don't store crossings that go out of bounds
+                  if (myz <= zmax + dz/2 && myz >= zmin - dz/2) {
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 0] = thisx;
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 1] = thisy;
+                    boxes[beam*nrays*ncrossings*3 + raynum*ncrossings*3 + numcrossing*3 + 2] = thisz;
+                    area_coverage[beam*nrays*ncrossings + raynum*ncrossings + numcrossing] = area;
+                  } 
+                  lastz = (int)currz;
+                  numcrossing++;
+                  break;
+                }       
+              }
+            } 
+
+            if (thisx != thisx_prev || thisy != thisy_prev || thisz != thisz_prev) {
+              //if (beam*nrays+raynum == 195) printf("%d\n", thisx);
+              int index = atomicAdd_system(&counter[eden_index(thisx, thisy, thisz)],1);
+              atomicExch_system(&marked[thisx*ny*nz*1200 + thisy*nz*1200 + thisz*1200 + index], beam*nrays+raynum);
+              //if (beam*nrays+raynum == 195) printf("%d\n", index);
+            }
+            thisx_prev = thisx;
+            thisy_prev = thisy;
+            thisz_prev = thisz;
+
             // In order to calculate the deposited energy into the plasma,
             // we need to calculate the plasma resistivity (eta) and collision frequency (nu_e-i)
-            //double tmp = sqrt(square(thisx*dx+xmin) + square(thisy*dy+ymin) + square(thisz*dz+zmin));
-            //double ed = interp_cuda(ne_data, r_data, tmp, nr);
-			double ed = eden[eden_index(thisx, thisy, thisz)];
-			//double etemp = interp_cuda(te_data, r_data, tmp, nr);
-			double ete = etemp[eden_index(thisx, thisy, thisz)];
+			      double ed = eden[eden_index(thisx, thisy, thisz)];
+			      double ete = etemp[eden_index(thisx, thisy, thisz)];
             double eta = 5.2e-5 * 10.0 / (ete*sqrt(ete));
             double nuei = (1e6 * ed * square(ec)/me)*eta;
         

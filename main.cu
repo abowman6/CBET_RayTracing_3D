@@ -142,7 +142,7 @@ int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
 }
 
 void rayTracing(Array3D eden, Array3D etemp, 
-        double *ne_profile, double *edep, int *marked, int *boxes) {
+        double *ne_profile, double *edep, int *marked, int *boxes, double *coverage, int *counter) {
 
     struct timeval time1, time2, time3, time4, total;
     gettimeofday(&time1, NULL);
@@ -167,10 +167,12 @@ void rayTracing(Array3D eden, Array3D etemp,
     double **dev_phase_r = new double *[nGPUs];
 
 	double **dev_eden = new double *[nGPUs];
-	double **dev_etemp = new double *[nGPUs];
+ 	double **dev_etemp = new double *[nGPUs];
 
     int **dev_marked = new int *[nGPUs];
     int **dev_boxes = new int *[nGPUs];
+
+  	double **dev_coverage = new double *[nGPUs];
 
     double *better_beam_norm = new double[nbeams*4];
     for (int b = 0; b < nbeams; ++b) {
@@ -196,7 +198,8 @@ void rayTracing(Array3D eden, Array3D etemp,
         safeGPUAlloc((void **)&dev_r_profile[i], sizeof(double)*nr, i);
         safeGPUAlloc((void **)&dev_edep[i], sizeof(double)*edep_size, i);
         //safeGPUAlloc((void **)&dev_marked[i], sizeof(int)*nx*ny*nz*2020, i);
-        //safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+        safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+        safeGPUAlloc((void **)&dev_coverage[i], sizeof(double)*nbeams*nrays*ncrossings, i);
 		    safeGPUAlloc((void **)&dev_eden[i], sizeof(double)*nx*ny*nz, i);
 		    safeGPUAlloc((void **)&dev_etemp[i], sizeof(double)*nx*ny*nz, i);
     
@@ -227,16 +230,18 @@ void rayTracing(Array3D eden, Array3D etemp,
 #pragma omp parallel for num_threads (nGPUs)
 #endif
     for (int i = 0; i < nGPUs; ++i) { 
-        cudaSetDevice(i);
+        cudaSetDevice(1);
         launch_ray_XYZ<<<nblocks, threads_per_block>>>(i, nindices, dev_eden[i], dev_etemp[i],
             dev_edep[i], dev_bbeam_norm[i],
             dev_beam_norm[i], dev_pow_r[i], dev_phase_r[i],
-            dedx_const, dedy_const, dedz_const, dev_marked[i], dev_boxes[i]);
-        cudaDeviceSynchronize();
+            dedx_const, dedy_const, dedz_const, marked, dev_boxes[i], dev_coverage[i], counter);
+        cout << cudaDeviceSynchronize() << endl;
     }
     
     for (int i = 0; i < nGPUs; ++i) {
         moveToAndFromGPU(edep_per_GPU[i], dev_edep[i], sizeof(double)*edep_size, i);
+        moveToAndFromGPU(boxes, dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+        moveToAndFromGPU(coverage, dev_coverage[i], sizeof(double)*nbeams*nrays*ncrossings, i);
         cudaFree(dev_pow_r[i]);
         cudaFree(dev_phase_r[i]);
         cudaFree(dev_beam_norm[i]);
@@ -247,6 +252,8 @@ void rayTracing(Array3D eden, Array3D etemp,
         cudaFree(dev_edep[i]);
         cudaFree(dev_eden[i]);
         cudaFree(dev_etemp[i]);
+        cudaFree(dev_coverage[i]);
+        cudaFree(dev_boxes[i]);
     }
     delete[] dev_pow_r;
     delete[] dev_phase_r;
@@ -258,6 +265,8 @@ void rayTracing(Array3D eden, Array3D etemp,
     delete[] dev_edep;
     delete[] dev_eden;
     delete[] dev_etemp;
+    delete[] dev_coverage;
+    delete[] dev_boxes;
 
     gettimeofday(&time3, NULL);
     for (int l = 0; l < nGPUs; ++l) {
@@ -297,13 +306,10 @@ void rayTracing(Array3D eden, Array3D etemp,
 
 int main(int argc, char **argv) {
 
-#ifdef USE_OPENMP
     if (argc <= 1) {
-        omp_set_num_threads(1);
     } else {
         omp_set_num_threads(atoi(argv[1]));
     }
-#endif
 
     // r_data is the radius profile, ne_data is the electron profile
     // and te_data is the temperature profile
@@ -324,12 +330,18 @@ int main(int argc, char **argv) {
     file.close();
 
     Array3D edep(boost::extents[nx+2][ny+2][nz+2]),
-		etemp(boost::extents[nx][nz][nz]),
-        eden(boost::extents[nx][nz][nz]);
-        //wpe(boost::extents[nx][nz][nz]);;
-    int marked[nx];
-    int boxes[nbeams];
+		  etemp(boost::extents[nx][nz][nz]),
+      eden(boost::extents[nx][nz][nz]);
 
+    int *marked, *counter;
+
+    // 1200 here is temporary, need to come up with bound
+    cudaMallocManaged(&marked, sizeof(int)*nx*ny*nz*1200);
+    cudaMallocManaged(&counter, sizeof(int)*nx*ny*nz);
+
+    Array4I boxes(boost::extents[nbeams][nrays][ncrossings][3]);
+    Array3D area_coverage(boost::extents[nbeams][nrays][ncrossings]);
+    
 #ifdef USE_OPENMP
 #pragma omp parallel for
 #endif
@@ -346,57 +358,9 @@ int main(int argc, char **argv) {
             }
         }
     }
-    //printf("%d %d\n", nthreads/nbeams, nrays);
-    
-    //cudaFuncSetAttribute(launch_ray_XYZ, cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-    //printf("%d\n", nindices);
-    //int zones_spanned = (int)ceil((beam_max_x-beam_min_x)/xres);
-    //printf("%d\n", nindices);
-    //printf("%d %d %d %d\n", zones_spanned, nrays, nrays_x, zones_spanned*4);
-    /*int *hit = new int[nrays];
-    int *bad = new int[nrays];
-    for (int raynum1 = 0; raynum1 < nrays; ++raynum1) {
-        int b1 = raynum1/(rays_per_zone*rays_per_zone);
-        int b2 = raynum1%(rays_per_zone*rays_per_zone);
-        int ry = b1/(zones_spanned)*rays_per_zone + b2/rays_per_zone;
-        int rx = b1%(zones_spanned)*rays_per_zone + b2%rays_per_zone;
-        if (rx >= nrays_x) {
-            printf("big x %d %d %d %d\n", b1,b2,ry,rx);
-        }
-        int raynum = ry*nrays_x+rx;
-        //if (raynum1 == 18501) printf("%d %d %d %d\n", b1,b2,ry,rx);
-        //if (b1 <= 67) printf("%d %d %d\n", b1, raynum1, raynum);
-        hit[raynum1] = raynum;
-        bad[raynum1] = 0;
-        if (raynum > nrays) {
-            printf("too big %d %d\n", raynum1, raynum);
-        }
-        //printf("%d r%d\n", raynum1, raynum);
-    }*/
-    //printf("%d %d\n", hit[4], hit[2209]);
-#if 0
-    for (int i = 0; i < nrays; ++i) {
-        int good = 0;
-        int a = -1;
-        for (int j = 0; j < nrays; ++j) {
-            if (i == hit[j]) {
-                if (good) {
-                    printf("bad %d %d %d\n", i, j, a);
-                } else {
-                    good = 1;
-                    a = j;
-                }
-                //break;
-            } 
-        }
-        if (!good) {
-            printf("%d\n", i);
-        }
-    }
-#endif
-    //printf("%d %d\n", nindices, threads_per_beam);
-    rayTracing(eden, etemp, NULL, &edep[0][0][0], &marked[0], &boxes[0]);
-/*
+    rayTracing(eden, etemp, NULL, &edep[0][0][0], marked, &boxes[0][0][0][0], &area_coverage[0][0][0], counter);
+    // Below is the code for writing to the hdf5 file
+    /*
     Array3D edepavg(boost::extents[nx][ny][nz]);
     Array3D x(boost::extents[nx][ny][nz]);
     Array3D y(boost::extents[nx][ny][nz]);
@@ -436,6 +400,7 @@ int main(int argc, char **argv) {
 
     save2Hdf5(x, y, z, edepavg);
 */
+    // For quick testing
 #ifdef PRINT
     print(std::cout, edep);
 #endif
