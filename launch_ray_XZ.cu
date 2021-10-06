@@ -119,7 +119,8 @@ bool init(int beam, int pre_raynum, double &x_init, double &y_init, double &z_in
     y_init = y_init*cos(theta2) + tmp_x0*sin(theta2);
 
     uray_init = (ref <= beam_max_x)*uray_mult*interp_cuda(pow_r, phase_r, ref, 2001);
-    return true;
+    return __any_sync(0xffffffff, ref <= beam_max_x);
+    //return true;
 }
 
 __global__
@@ -130,6 +131,7 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
         double *area_coverage, int *counter) {
     
     int beam = blockIdx.x + b*(nbeams/nGPUs);
+    int kill = 0;
 
     int start = blockIdx.y*blockDim.x + threadIdx.x;
 
@@ -308,6 +310,12 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
             double v_y = __shfl_sync(0xffffffff, myy, vlid); 
             double h_z = __shfl_sync(0xffffffff, myz, hlid); 
             double v_z = __shfl_sync(0xffffffff, myz, vlid); 
+            /*assert(h_x != 0);
+            assert(h_y != 0);
+            assert(h_z != 0);
+            assert(v_x != 0);
+            assert(v_y != 0);
+            assert(v_z != 0);*/
 
             double x_hdiff = myx - h_x; 
             double y_hdiff = myy - h_y; 
@@ -445,8 +453,10 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
             if (absorption == 1) {
                 // Now we can decrement the ray's energy density according to how much energy
                 // was absorbed by the plasma.
+                //if (raynum == 3960) printf("%d %lf\n", tt, uray);
                 increment = ed/ncrit * nuei * dt * uray;
                 uray -= increment;
+                //if (raynum == 3960) printf("%d %lf\n", tt, uray);
             } else {
                 // We use this next line instead, if we are just using uray as a bookkeeping device
                 // (i.e., no absorption by the plasma and no loss of energy by the ray).
@@ -495,7 +505,11 @@ void launch_ray_XYZ(int b, unsigned nindices, double *eden,
                 myx < (xmin - (dx / 2.0)) || myx > (xmax + (dx / 2.0)) ||
                 myy < (ymin - (dy / 2.0)) || myy > (ymax + (dy / 2.0)) ||
                 myz < (zmin - (dz / 2.0)) || myz > (zmax + (dz / 2.0))) {
-                break;
+                kill = 1;
+            }
+            // Wait until all threads in the warp are done before breaking
+            if (__all_sync(0xffffffff, kill)) {
+              break;
             }
         }
     }

@@ -1,7 +1,7 @@
 #include "multi_gpu.cuh"
 
 bool safeGPUAlloc(void **dst, size_t size, int GPUIndex) {
-    cudaSetDevice(1);
+    cudaSetDevice(GPUIndex);
     size_t free;
     size_t total;
     // get the amount of memory
@@ -46,7 +46,7 @@ bool moveToAndFromGPU(void *dst, void *src, size_t size, int GPUIndex) {
     cudaError_t e = cudaSuccess;
     int temp = 0;
     cudaGetDevice(&temp);
-    cudaSetDevice(1);
+    cudaSetDevice(GPUIndex);
     e = cudaMemcpy(dst, src, size, cudaMemcpyDefault);
     if (e != cudaSuccess) {
         cout << "Error encountered during cudaMemcpy: " << cudaGetErrorString(e) << endl;

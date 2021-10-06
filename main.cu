@@ -197,7 +197,6 @@ void rayTracing(Array3D eden, Array3D etemp,
         safeGPUAlloc((void **)&dev_te_profile[i], sizeof(double)*nr, i);
         safeGPUAlloc((void **)&dev_r_profile[i], sizeof(double)*nr, i);
         safeGPUAlloc((void **)&dev_edep[i], sizeof(double)*edep_size, i);
-        //safeGPUAlloc((void **)&dev_marked[i], sizeof(int)*nx*ny*nz*2020, i);
         safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
         safeGPUAlloc((void **)&dev_coverage[i], sizeof(double)*nbeams*nrays*ncrossings, i);
 		    safeGPUAlloc((void **)&dev_eden[i], sizeof(double)*nx*ny*nz, i);
@@ -207,9 +206,6 @@ void rayTracing(Array3D eden, Array3D etemp,
         moveToAndFromGPU(dev_bbeam_norm[i], &(better_beam_norm[0]), sizeof(double)*4*nbeams, i);
         moveToAndFromGPU(dev_pow_r[i], &(pow_r[0]), sizeof(double)*2001, i);
         moveToAndFromGPU(dev_phase_r[i], &(phase_r[0]), sizeof(double)*2001, i);
-        /*moveToAndFromGPU(dev_ne_profile[i], &(ne_profile[0]), sizeof(double)*nr, i);
-        moveToAndFromGPU(dev_te_profile[i], &(te_profile[0]), sizeof(double)*nr, i);
-        moveToAndFromGPU(dev_r_profile[i], &(r_profile[0]), sizeof(double)*nr, i);*/
 		    moveToAndFromGPU(dev_eden[i], &(eden[0][0][0]), sizeof(double)*nx*ny*nz, i);
 		    moveToAndFromGPU(dev_etemp[i], &(etemp[0][0][0]), sizeof(double)*nx*ny*nz, i);
     }
@@ -222,15 +218,12 @@ void rayTracing(Array3D eden, Array3D etemp,
     double dedz_const = grad_const / zres;
 
     dim3 nblocks(nbeams/nGPUs, threads_per_beam/threads_per_block, 1);
-    //printf("%d %d\n", nbeams/nGPUs, threads_per_beam);
-    //printf("%d\n", nindices);
 
-    // We put the launches in their own loops for timing purposes
 #ifdef USE_OPENMP
 #pragma omp parallel for num_threads (nGPUs)
 #endif
     for (int i = 0; i < nGPUs; ++i) { 
-        cudaSetDevice(1);
+        cudaSetDevice(i);
         launch_ray_XYZ<<<nblocks, threads_per_block>>>(i, nindices, dev_eden[i], dev_etemp[i],
             dev_edep[i], dev_bbeam_norm[i],
             dev_beam_norm[i], dev_pow_r[i], dev_phase_r[i],
@@ -286,8 +279,6 @@ void rayTracing(Array3D eden, Array3D etemp,
     }
 
     delete[] edep_per_GPU;
-
-    cudaDeviceReset();
 
     gettimeofday(&time4, NULL);
     timersub(&time4, &time1, &total);
@@ -350,11 +341,7 @@ int main(int argc, char **argv) {
             for (unsigned k = 0; k < nz; ++k) {
                 double tmp = sqrt(pow(i*dx+xmin, 2) + pow(j*dy+ymin, 2) + pow(k*dz+zmin, 2));
                 eden[i][j][k] = interp(ne_data, r_data, tmp);
-                //etemp[i][j][k] = 5.2e-5 * 10.0 / pow(interp(te_data, r_data, tmp), 1.5);
                 etemp[i][j][k] = interp(te_data, r_data, tmp);
-                //wpe[i][j][k] = sqrt((pow(omega, 2) - pow(sqrt(eden[i][j][k]*1e6*pow(ec,2)/((double)me*e0)), 2)) /
-                 //       pow(c, 2.0));
-                //wpe[i][j][k] = sqrt(eden[i][j][k]*1e6*pow(ec,2)/((double)me*e0));
             }
         }
     }
@@ -405,4 +392,5 @@ int main(int argc, char **argv) {
     print(std::cout, edep);
 #endif
     return 0;
+    cudaDeviceReset();
 }
