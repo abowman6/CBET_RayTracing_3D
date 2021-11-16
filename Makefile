@@ -11,8 +11,10 @@ NVFLAGS = --expt-relaxed-constexpr --gpu-architecture sm_70 -lineinfo -g -Xptxas
 cbet-gpu: def.cuh main.cu launch_ray_XZ.cu multi_gpu.cpp
 	$(NVCC) $(NVFLAGS) $(CXXFLAGS) -o cbet-gpu main.cu launch_ray_XZ.cu multi_gpu.cpp $(LDFLAGS)
 
+double : def.cuh main.cu launch_ray_XZ.cu multi_gpu.cpp
+	$(NVCC) $(NVFLAGS) $(CXXFLAGS) -D DOUBLE -o cbet-gpu main.cu launch_ray_XZ.cu multi_gpu.cpp $(LDFLAGS)
 test: def.cuh main.cu launch_ray_XZ.cu
-	$(NVCC) $(NVFLAGS) $(CXXFLAGS) -D PRINT -o cbet-gpu main.cu launch_ray_XZ.cu multi_gpu.cpp $(LDFLAGS)
+	$(NVCC) $(NVFLAGS) $(CXXFLAGS) -D DOUBLE -D PRINT -o cbet-gpu main.cu launch_ray_XZ.cu multi_gpu.cpp $(LDFLAGS)
 	./cbet-gpu 10 > cbet_gpu_output
 	cmp cbet_gpu_output truth_100
 

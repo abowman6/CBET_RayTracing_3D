@@ -1,9 +1,9 @@
 
-#include "def.cuh"
+#include "constants.cuh"
 
 using namespace H5;
 
-double interp(const vector<double> y, const vector<double> x, const double xp)
+dtype interp(const vector<dtype> y, const vector<dtype> x, const dtype xp)
 {
     unsigned low, high, mid;
     assert(x.size() == y.size());
@@ -51,7 +51,7 @@ double interp(const vector<double> y, const vector<double> x, const double xp)
     }
 }
 
-void print(std::ostream& os, const double& x)
+void print(std::ostream& os, const dtype& x)
 {
   os << x;
 }
@@ -69,9 +69,9 @@ void print(std::ostream& os, const Array& A)
   os << "]" << endl;
 }
 
-vector<double> span(double minimum, double maximum, unsigned len) {
-    double step = (maximum - minimum) / (len - 1), curr = minimum;
-    vector<double> ret(len);
+vector<dtype> span(dtype minimum, dtype maximum, unsigned len) {
+    dtype step = (maximum - minimum) / (len - 1), curr = minimum;
+    vector<dtype> ret(len);
     for (unsigned i = 0; i < len; ++i) {
         ret[i] = curr;
         curr += step;
@@ -85,6 +85,11 @@ vector<double> span(double minimum, double maximum, unsigned len) {
 int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
 {
     const H5std_string  FILE_NAME("edep.hdf5");
+#ifndef DOUBLE
+    auto type = H5::PredType::NATIVE_FLOAT;
+#else
+    auto type = H5::PredType::NATIVE_DOUBLE;
+#endif
 
     try
         {
@@ -112,25 +117,25 @@ int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
              * Define datatype for the data in the file.
              * We will store little endian INT numbers.
              */
-            H5::IntType datatype(H5::PredType::NATIVE_DOUBLE);
+            H5::IntType datatype(type);
             datatype.setOrder(H5T_ORDER_LE);
             /*
              * Create a new dataset within the file using defined dataspace and
              * datatype and default dataset creation properties.
              */
             H5::DataSet dataset = file.createDataSet("/Coordinate_x", datatype, dataspace);
-            dataset.write(x.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(x.data(), type);
             dataset = file.createDataSet("/Coordinate_y", datatype, dataspace);
-            dataset.write(y.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(y.data(), type);
             dataset = file.createDataSet("/Coordinate_z", datatype, dataspace);
-            dataset.write(z.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(z.data(), type);
 
             dataset = file.createDataSet("/Edepavg", datatype, dataspace);
             /*
              * Write the data to the dataset using default memory space, file
              * space, and transfer properties.
              */
-            dataset.write(edepavg.data(), H5::PredType::NATIVE_DOUBLE);
+            dataset.write(edepavg.data(), type);
         }  // end of try block
     // catch failure caused by the H5File operations
     catch(H5::Exception& error )
@@ -142,13 +147,13 @@ int save2Hdf5(Array3D& x, Array3D& y, Array3D& z, Array3D& edepavg)
 }
 
 void rayTracing(Array3D eden, Array3D etemp, 
-        double *ne_profile, double *edep, int *marked, int *boxes, double *coverage, int *counter) {
+        dtype *ne_profile, dtype *edep, int *marked, int *boxes, dtype *coverage, int *counter) {
 
     struct timeval time1, time2, time3, time4, total;
     gettimeofday(&time1, NULL);
 
-    vector<double> phase_r = span(0.0, 0.1, 2001);
-    vector<double> pow_r(2001);
+    vector<dtype> phase_r = span(0.0, 0.1, 2001);
+    vector<dtype> pow_r(2001);
 
 #ifdef USE_OPENMP
 #pragma omp parallel for
@@ -156,66 +161,41 @@ void rayTracing(Array3D eden, Array3D etemp,
     for (unsigned i = 0; i < 2001; ++i) {
         pow_r[i] = exp(-1*pow(pow((phase_r[i]/sigma),2), (5.0/2.0)));
     }
-    //printf("Starting CUDA code\n");
 
-    double **dev_beam_norm = new double *[nGPUs];
-    double **dev_bbeam_norm = new double *[nGPUs];
-    double **dev_ne_profile = new double *[nGPUs];
-    double **dev_te_profile = new double *[nGPUs];
-    double **dev_r_profile = new double *[nGPUs];
-    double **dev_pow_r = new double *[nGPUs];
-    double **dev_phase_r = new double *[nGPUs];
+    dtype **dev_beam_norm = new dtype *[nGPUs];
+    dtype **dev_pow_r = new dtype *[nGPUs];
+    dtype **dev_phase_r = new dtype *[nGPUs];
 
-	double **dev_eden = new double *[nGPUs];
- 	double **dev_etemp = new double *[nGPUs];
+	  dtype **dev_eden = new dtype *[nGPUs];
+ 	  dtype **dev_etemp = new dtype *[nGPUs];
 
     int **dev_marked = new int *[nGPUs];
-    int **dev_boxes = new int *[nGPUs];
+    //int **dev_boxes = new int *[nGPUs];
 
-  	double **dev_coverage = new double *[nGPUs];
+  	//dtype **dev_coverage = new dtype *[nGPUs];
 
-    double *better_beam_norm = new double[nbeams*4];
-    for (int b = 0; b < nbeams; ++b) {
-        double theta1 = acos(beam_norm[b][2]);
-        double theta2 = atan2(beam_norm[b][1]*focal_length, beam_norm[b][0]*focal_length);
-        better_beam_norm[4*b] = cos(theta1);
-        better_beam_norm[4*b+1] = sin(theta1);
-        better_beam_norm[4*b+2] = cos(theta2);
-        better_beam_norm[4*b+3] = sin(theta2);
-    }
-
-    double **dev_edep = new double *[nGPUs];
-    double **edep_per_GPU = new double *[nGPUs];
+    dtype **dev_edep = new dtype *[nGPUs];
+    dtype **edep_per_GPU = new dtype *[nGPUs];
     for (int i = 0; i < nGPUs; ++i) {
-        edep_per_GPU[i] = (double *)malloc(sizeof(double)*edep_size);
+        edep_per_GPU[i] = (dtype *)malloc(sizeof(dtype)*edep_size);
 
-        safeGPUAlloc((void **)&dev_beam_norm[i], sizeof(double)*3*nbeams, i);
-        safeGPUAlloc((void **)&dev_bbeam_norm[i], sizeof(double)*4*nbeams, i);
-        safeGPUAlloc((void **)&dev_pow_r[i], sizeof(double)*2001, i);
-        safeGPUAlloc((void **)&dev_phase_r[i], sizeof(double)*2001, i);
-        safeGPUAlloc((void **)&dev_ne_profile[i], sizeof(double)*nr, i);
-        safeGPUAlloc((void **)&dev_te_profile[i], sizeof(double)*nr, i);
-        safeGPUAlloc((void **)&dev_r_profile[i], sizeof(double)*nr, i);
-        safeGPUAlloc((void **)&dev_edep[i], sizeof(double)*edep_size, i);
-        safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
-        safeGPUAlloc((void **)&dev_coverage[i], sizeof(double)*nbeams*nrays*ncrossings, i);
-		    safeGPUAlloc((void **)&dev_eden[i], sizeof(double)*nx*ny*nz, i);
-		    safeGPUAlloc((void **)&dev_etemp[i], sizeof(double)*nx*ny*nz, i);
+        safeGPUAlloc((void **)&dev_beam_norm[i], sizeof(dtype)*3*nbeams, i);
+        safeGPUAlloc((void **)&dev_pow_r[i], sizeof(dtype)*2001, i);
+        safeGPUAlloc((void **)&dev_phase_r[i], sizeof(dtype)*2001, i);
+        safeGPUAlloc((void **)&dev_edep[i], sizeof(dtype)*edep_size, i);
+        //safeGPUAlloc((void **)&dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+        //safeGPUAlloc((void **)&dev_coverage[i], sizeof(dtype)*nbeams*nrays*ncrossings, i);
+		    safeGPUAlloc((void **)&dev_eden[i], sizeof(dtype)*nx*ny*nz, i);
+		    safeGPUAlloc((void **)&dev_etemp[i], sizeof(dtype)*nx*ny*nz, i);
     
-        moveToAndFromGPU(dev_beam_norm[i], &(beam_norm[0][0]), sizeof(double)*3*nbeams, i);
-        moveToAndFromGPU(dev_bbeam_norm[i], &(better_beam_norm[0]), sizeof(double)*4*nbeams, i);
-        moveToAndFromGPU(dev_pow_r[i], &(pow_r[0]), sizeof(double)*2001, i);
-        moveToAndFromGPU(dev_phase_r[i], &(phase_r[0]), sizeof(double)*2001, i);
-		    moveToAndFromGPU(dev_eden[i], &(eden[0][0][0]), sizeof(double)*nx*ny*nz, i);
-		    moveToAndFromGPU(dev_etemp[i], &(etemp[0][0][0]), sizeof(double)*nx*ny*nz, i);
+        moveToAndFromGPU(dev_beam_norm[i], &(beam_norm[0][0]), sizeof(dtype)*3*nbeams, i);
+        moveToAndFromGPU(dev_pow_r[i], &(pow_r[0]), sizeof(dtype)*2001, i);
+        moveToAndFromGPU(dev_phase_r[i], &(phase_r[0]), sizeof(dtype)*2001, i);
+		    moveToAndFromGPU(dev_eden[i], &(eden[0][0][0]), sizeof(dtype)*nx*ny*nz, i);
+		    moveToAndFromGPU(dev_etemp[i], &(etemp[0][0][0]), sizeof(dtype)*nx*ny*nz, i);
     }
 
     gettimeofday(&time2, NULL);
-
-    double grad_const = pow(c, 2) / (2.0 * ncrit) * dt * 0.5;
-    double dedx_const = grad_const / xres;
-    double dedy_const = grad_const / yres;
-    double dedz_const = grad_const / zres;
 
     dim3 nblocks(nbeams/nGPUs, threads_per_beam/threads_per_block, 1);
 
@@ -225,41 +205,36 @@ void rayTracing(Array3D eden, Array3D etemp,
     for (int i = 0; i < nGPUs; ++i) { 
         cudaSetDevice(i);
         launch_ray_XYZ<<<nblocks, threads_per_block>>>(i, nindices, dev_eden[i], dev_etemp[i],
-            dev_edep[i], dev_bbeam_norm[i],
+            dev_edep[i], NULL,
             dev_beam_norm[i], dev_pow_r[i], dev_phase_r[i],
-            dedx_const, dedy_const, dedz_const, marked, dev_boxes[i], dev_coverage[i], counter);
-        cout << cudaDeviceSynchronize() << endl;
+            marked, boxes, coverage, counter);
+        cudaError_t e = cudaDeviceSynchronize();
+        if (e != 0) {
+          cout << e << endl;
+        }
     }
     
     for (int i = 0; i < nGPUs; ++i) {
-        moveToAndFromGPU(edep_per_GPU[i], dev_edep[i], sizeof(double)*edep_size, i);
-        moveToAndFromGPU(boxes, dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
-        moveToAndFromGPU(coverage, dev_coverage[i], sizeof(double)*nbeams*nrays*ncrossings, i);
+        moveToAndFromGPU(edep_per_GPU[i], dev_edep[i], sizeof(dtype)*edep_size, i);
+        //moveToAndFromGPU(boxes, dev_boxes[i], sizeof(int)*nbeams*nrays*ncrossings*3, i);
+        //moveToAndFromGPU(coverage, dev_coverage[i], sizeof(dtype)*nbeams*nrays*ncrossings, i);
         cudaFree(dev_pow_r[i]);
         cudaFree(dev_phase_r[i]);
         cudaFree(dev_beam_norm[i]);
-        cudaFree(dev_bbeam_norm[i]);
-        cudaFree(dev_te_profile[i]);
-        cudaFree(dev_ne_profile[i]);
-        cudaFree(dev_r_profile[i]);
         cudaFree(dev_edep[i]);
         cudaFree(dev_eden[i]);
         cudaFree(dev_etemp[i]);
-        cudaFree(dev_coverage[i]);
-        cudaFree(dev_boxes[i]);
+        //cudaFree(dev_coverage[i]);
+        //cudaFree(dev_boxes[i]);
     }
     delete[] dev_pow_r;
     delete[] dev_phase_r;
     delete[] dev_beam_norm;
-    delete[] dev_bbeam_norm;
-    delete[] dev_te_profile;
-    delete[] dev_ne_profile;
-    delete[] dev_r_profile;
     delete[] dev_edep;
     delete[] dev_eden;
     delete[] dev_etemp;
-    delete[] dev_coverage;
-    delete[] dev_boxes;
+    //delete[] dev_coverage;
+    //delete[] dev_boxes;
 
     gettimeofday(&time3, NULL);
     for (int l = 0; l < nGPUs; ++l) {
@@ -286,7 +261,7 @@ void rayTracing(Array3D eden, Array3D etemp,
     timersub(&time3, &time2, &time3);
     timersub(&time2, &time1, &time2);
 #ifndef PRINT
-    printf("rt: Init %ld.%06ld\nTracing %ld.%06ld\nCombining %ld.%06ld\n"
+    printf("Moving %ld.%06ld\nTracing %ld.%06ld\nCombining %ld.%06ld\n"
            "Total %ld.%06ld\n",
            time2.tv_sec, time2.tv_usec,
            time3.tv_sec, time3.tv_usec,
@@ -301,10 +276,17 @@ int main(int argc, char **argv) {
     } else {
         omp_set_num_threads(atoi(argv[1]));
     }
-
+    struct timeval time0, time1, time2, time3;
+    gettimeofday(&time0, NULL);
+    cudaDeviceEnablePeerAccess(1,0);
+    cudaSetDevice(1);
+    cudaDeviceEnablePeerAccess(0,0);
+    cudaSetDevice(0);
+    gettimeofday(&time1, NULL);
+ 
     // r_data is the radius profile, ne_data is the electron profile
     // and te_data is the temperature profile
-    vector<double> r_data(nr), te_data(nr), ne_data(nr);
+    vector<dtype> r_data(nr), te_data(nr), ne_data(nr);
 
     // Load data from files
     fstream file;
@@ -325,29 +307,51 @@ int main(int argc, char **argv) {
       eden(boost::extents[nx][nz][nz]);
 
     int *marked, *counter;
+    int *boxes;
+    dtype *area_coverage;
 
     // 1200 here is temporary, need to come up with bound
-    cudaMallocManaged(&marked, sizeof(int)*nx*ny*nz*1200);
+    cudaMallocManaged(&marked, sizeof(int)*nx*ny*nz*marked_const);
     cudaMallocManaged(&counter, sizeof(int)*nx*ny*nz);
+  
+    cudaMallocManaged(&boxes, sizeof(int)*nrays*nbeams*ncrossings*3);
+    cudaMallocManaged(&area_coverage, sizeof(dtype)*nrays*nbeams*ncrossings);
 
-    Array4I boxes(boost::extents[nbeams][nrays][ncrossings][3]);
-    Array3D area_coverage(boost::extents[nbeams][nrays][ncrossings]);
+    //Array4I boxes(boost::extents[nbeams][nrays][ncrossings][3]);
+    //Array3D area_coverage(boost::extents[nbeams][nrays][ncrossings]);
     
+    gettimeofday(&time2, NULL);
 #ifdef USE_OPENMP
 #pragma omp parallel for
 #endif
     for (unsigned i = 0; i < nx; ++i) {
         for (unsigned j = 0; j < ny; ++j) {
             for (unsigned k = 0; k < nz; ++k) {
-                double tmp = sqrt(pow(i*dx+xmin, 2) + pow(j*dy+ymin, 2) + pow(k*dz+zmin, 2));
+                dtype tmp = sqrt(pow(i*dx+xmin, 2) + pow(j*dy+ymin, 2) + pow(k*dz+zmin, 2));
                 eden[i][j][k] = interp(ne_data, r_data, tmp);
                 etemp[i][j][k] = interp(te_data, r_data, tmp);
             }
         }
     }
-    rayTracing(eden, etemp, NULL, &edep[0][0][0], marked, &boxes[0][0][0][0], &area_coverage[0][0][0], counter);
+    gettimeofday(&time3, NULL);
+    timersub(&time3, &time2, &time3);
+    timersub(&time2, &time1, &time2);
+    timersub(&time1, &time0, &time1);
+    printf("CUDA Init %ld.%06ld\n", time1.tv_sec, time1.tv_usec);
+    printf("Malloc Managed %ld.%06ld\n", time2.tv_sec, time2.tv_usec);
+    printf("Setup %ld.%06ld\n", time3.tv_sec, time3.tv_usec);
+    rayTracing(eden, etemp, NULL, &edep[0][0][0], marked, boxes, area_coverage, counter);
+    int max = 0;
+    for (int i = 0; i < nx*ny*nz; ++i) {
+      if (counter[i] > max) {
+        max = counter[i];
+      }
+    }
+    printf("%d\n", max);
     // Below is the code for writing to the hdf5 file
-    /*
+#if 0
+    struct timeval time3, time4;
+    gettimeofday(&time3, NULL);
     Array3D edepavg(boost::extents[nx][ny][nz]);
     Array3D x(boost::extents[nx][ny][nz]);
     Array3D y(boost::extents[nx][ny][nz]);
@@ -386,7 +390,10 @@ int main(int argc, char **argv) {
     }
 
     save2Hdf5(x, y, z, edepavg);
-*/
+    gettimeofday(&time4, NULL);
+    timersub(&time4, &time3, &time4);
+    printf("Write to hdf5 %ld.%06ld\n", time4.tv_sec, time4.tv_usec);
+#endif
     // For quick testing
 #ifdef PRINT
     print(std::cout, edep);
